@@ -1,0 +1,36 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# Azure Functions
+local.settings.json
+
+# Java
+*.class
+*.log
+
+# IDE
+.idea/
+*.iml
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Oracle Wallet
+wallet/
+Wallet/
+*.p12
+*.jks
+*.sso
+*.ora
