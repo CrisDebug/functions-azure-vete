@@ -1,5 +1,9 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>cl.veterinaria</groupId>
@@ -12,18 +16,24 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>17</java.version>
+
         <azure.functions.maven.plugin.version>1.24.0</azure.functions.maven.plugin.version>
         <azure.functions.java.library.version>2.2.0</azure.functions.java.library.version>
-        <functionAppName>veterinaria-java-test-20260821115346667</functionAppName>
+
+        <!-- NUEVA FUNCTION APP CLÁSICA -->
+        <functionAppName>fn-veterinaria-citas-java</functionAppName>
     </properties>
 
     <dependencies>
+
+        <!-- Azure Functions Java -->
         <dependency>
             <groupId>com.microsoft.azure.functions</groupId>
             <artifactId>azure-functions-java-library</artifactId>
             <version>${azure.functions.java.library.version}</version>
         </dependency>
-        <!-- Test -->
+
+        <!-- Tests -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -37,58 +47,134 @@
             <version>2.23.4</version>
             <scope>test</scope>
         </dependency>
-        <!-- cosmos -->
+
+        <!-- Azure Cosmos DB -->
         <dependency>
-    <groupId>com.azure</groupId>
-    <artifactId>azure-cosmos</artifactId>
-    <version>4.66.0</version>
-</dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-cosmos</artifactId>
+            <version>4.66.0</version>
+        </dependency>
+
+        <!-- Oracle JDBC -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <version>23.6.0.24.10</version>
+        </dependency>
+
+        <!-- Oracle Wallet / PKI -->
+        <dependency>
+            <groupId>com.oracle.database.security</groupId>
+            <artifactId>oraclepki</artifactId>
+            <version>23.26.3.0.0</version>
+        </dependency>
+
     </dependencies>
 
     <build>
+
+        <!-- Recursos normales + Oracle Wallet -->
+        <resources>
+
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+            </resource>
+
+            <resource>
+                <directory>wallet</directory>
+                <targetPath>wallet</targetPath>
+                <filtering>false</filtering>
+            </resource>
+
+        </resources>
+
         <plugins>
+
+            <!-- Java 17 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.8.1</version>
+
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
                     <encoding>${project.build.sourceEncoding}</encoding>
                 </configuration>
             </plugin>
+
+            <!--
+                Copiar Oracle Wallet al paquete de Azure Functions.
+
+                Resultado esperado:
+                target/azure-functions/
+                └── fn-veterinaria-citas-java-classic/
+                    └── wallet/
+                        ├── cwallet.sso
+                        ├── tnsnames.ora
+                        ├── sqlnet.ora
+                        └── ...
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+
+                <executions>
+                    <execution>
+                        <id>copy-oracle-wallet</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+
+                        <configuration>
+                            <overwrite>true</overwrite>
+
+                            <outputDirectory>
+                                ${project.build.directory}/azure-functions/${functionAppName}/wallet
+                            </outputDirectory>
+
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/wallet</directory>
+                                    <filtering>false</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Azure Functions Maven Plugin -->
             <plugin>
                 <groupId>com.microsoft.azure</groupId>
                 <artifactId>azure-functions-maven-plugin</artifactId>
                 <version>${azure.functions.maven.plugin.version}</version>
+
                 <configuration>
-                    <!-- function app name -->
+
                     <appName>${functionAppName}</appName>
-                    <!-- function app resource group -->
-                    <resourceGroup>java-functions-group</resourceGroup>
-                    <!-- function app service plan name -->
-                    <appServicePlanName>java-functions-app-service-plan</appServicePlanName>
-                    <!-- function app region-->
-                    <!-- refers https://github.com/microsoft/azure-maven-plugins/wiki/Azure-Functions:-Configuration-Details#supported-regions for all valid values -->
-                    <region>westus</region>
-                    <!-- function pricingTier, default to be consumption if not specified -->
-                    <!-- refers https://github.com/microsoft/azure-maven-plugins/wiki/Azure-Functions:-Configuration-Details#supported-pricing-tiers for all valid values -->
-                    <!-- <pricingTier></pricingTier> -->
-                    <!-- Whether to disable application insights, default is false -->
-                    <!-- refers https://github.com/microsoft/azure-maven-plugins/wiki/Azure-Functions:-Configuration-Details for all valid configurations for application insights-->
-                    <!-- <disableAppInsights></disableAppInsights> -->
+
+                    <resourceGroup>
+                        DEV.CLOUD.NATIVE_II_001A_GRUPO10
+                    </resourceGroup>
+
                     <runtime>
-                        <!-- runtime os, could be windows, linux or docker-->
-                        <os>windows</os>
+                        <os>linux</os>
                         <javaVersion>17</javaVersion>
                     </runtime>
+
                     <appSettings>
                         <property>
                             <name>FUNCTIONS_EXTENSION_VERSION</name>
                             <value>~4</value>
                         </property>
                     </appSettings>
+
                 </configuration>
+
                 <executions>
                     <execution>
                         <id>package-functions</id>
@@ -97,11 +183,14 @@
                         </goals>
                     </execution>
                 </executions>
+
             </plugin>
-            <!--Remove obj folder generated by .NET SDK in maven clean-->
+
+            <!-- Clean -->
             <plugin>
                 <artifactId>maven-clean-plugin</artifactId>
                 <version>3.1.0</version>
+
                 <configuration>
                     <filesets>
                         <fileset>
@@ -109,7 +198,12 @@
                         </fileset>
                     </filesets>
                 </configuration>
+
             </plugin>
+
         </plugins>
+
     </build>
+
 </project>
+

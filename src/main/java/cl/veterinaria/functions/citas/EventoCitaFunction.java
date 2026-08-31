@@ -1,18 +1,12 @@
-
 package cl.veterinaria.functions.citas;
 
-// ===============================
-// Azure Cosmos DB
-// ===============================
 import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
 import com.azure.cosmos.CosmosContainer;
 import com.azure.cosmos.models.CosmosItemRequestOptions;
+import com.azure.cosmos.models.CosmosItemResponse;
 import com.azure.cosmos.models.PartitionKey;
 
-// ===============================
-// Azure Functions
-// ===============================
 import com.microsoft.azure.functions.ExecutionContext;
 import com.microsoft.azure.functions.HttpMethod;
 import com.microsoft.azure.functions.HttpRequestMessage;
@@ -23,316 +17,235 @@ import com.microsoft.azure.functions.annotation.AuthorizationLevel;
 import com.microsoft.azure.functions.annotation.FunctionName;
 import com.microsoft.azure.functions.annotation.HttpTrigger;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
-/**
- * Azure Function encargada de recibir eventos publicados
- * por Azure Event Grid.
- *
- * Flujo:
- *
- * ms-citas
- * |
- * v
- * Oracle
- * |
- * v
- * Event Grid
- * |
- * v
- * eventoCitaJava
- * |
- * v
- * Cosmos DB
- *
- * La Function mantiene además la lógica necesaria para
- * responder al evento de validación inicial de Event Grid.
- */
 public class EventoCitaFunction {
 
-        // ==========================================================
-        // CLIENTE COSMOS DB
-        // ==========================================================
-
-        /*
-         * Cliente reutilizable de Cosmos DB.
-         *
-         * Se inicializa solamente cuando la Function necesita
-         * acceder al contenedor.
-         */
         private static CosmosClient cosmosClient;
 
-        /**
-         * Obtiene el contenedor de Cosmos DB.
-         *
-         * Las credenciales NO están escritas en el código.
-         *
-         * Se obtienen mediante variables de entorno:
-         *
-         * COSMOS_ENDPOINT
-         * COSMOS_KEY
-         * COSMOS_DATABASE
-         * COSMOS_CONTAINER
-         */
+        // ==========================================================
+        // COSMOS
+        // ==========================================================
+
         private static CosmosContainer getContainer() {
 
                 if (cosmosClient == null) {
 
+                        String endpoint = System.getenv("COSMOS_ENDPOINT");
+                        String key = System.getenv("COSMOS_KEY");
+
+                        if (endpoint == null || endpoint.isBlank()) {
+                                throw new IllegalStateException(
+                                                "COSMOS_ENDPOINT no está configurado");
+                        }
+
+                        if (key == null || key.isBlank()) {
+                                throw new IllegalStateException(
+                                                "COSMOS_KEY no está configurado");
+                        }
+
                         cosmosClient = new CosmosClientBuilder()
-                                        .endpoint(System.getenv("COSMOS_ENDPOINT"))
-                                        .key(System.getenv("COSMOS_KEY"))
+                                        .endpoint(endpoint)
+                                        .key(key)
                                         .buildClient();
                 }
 
+                String database = System.getenv("COSMOS_DATABASE");
+                String container = System.getenv("COSMOS_CONTAINER");
+
+                if (database == null || database.isBlank()) {
+                        throw new IllegalStateException(
+                                        "COSMOS_DATABASE no está configurado");
+                }
+
+                if (container == null || container.isBlank()) {
+                        throw new IllegalStateException(
+                                        "COSMOS_CONTAINER no está configurado");
+                }
+
                 return cosmosClient
-                                .getDatabase(System.getenv("COSMOS_DATABASE"))
-                                .getContainer(System.getenv("COSMOS_CONTAINER"));
+                                .getDatabase(database)
+                                .getContainer(container);
         }
 
         // ==========================================================
-        // AZURE FUNCTION
+        // HTTP TRIGGER
         // ==========================================================
 
-        /**
-         * Punto de entrada de la Azure Function.
-         *
-         * Recibe peticiones POST provenientes de Event Grid.
-         */
         @FunctionName("eventoCitaJava")
         public HttpResponseMessage run(
 
                         @HttpTrigger(name = "req", methods = {
-                                        HttpMethod.POST
-                        }, authLevel = AuthorizationLevel.ANONYMOUS) HttpRequestMessage<Optional<String>> request,
+                                        HttpMethod.POST }, authLevel = AuthorizationLevel.ANONYMOUS) HttpRequestMessage<Optional<String>> request,
 
                         final ExecutionContext context) {
 
-                // ======================================================
-                // 1. RECEPCIÓN DEL EVENTO
-                // ======================================================
-
                 context.getLogger().info(
-                                "eventoCitaJava recibió una petición.");
+                                "===== eventoCitaJava =====");
 
                 String body = request.getBody().orElse("");
 
                 context.getLogger().info(
-                                "Body recibido: " + body);
+                                "BODY RECIBIDO: " + body);
 
-                // ======================================================
-                // 2. VALIDACIÓN INICIAL DE EVENT GRID
-                // ======================================================
+                if (body.isBlank()) {
 
-                /*
-                 * Cuando se crea la suscripción de Event Grid,
-                 * Azure puede enviar un SubscriptionValidationEvent.
-                 *
-                 * La Function debe responder con:
-                 *
-                 * {
-                 * "validationResponse": "..."
-                 * }
-                 *
-                 * para confirmar que el endpoint es válido.
-                 */
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("Body vacío.")
+                                        .build();
+                }
 
-                if (body.contains("SubscriptionValidationEvent")) {
+                try {
+
+                        // ==================================================
+                        // EXTRAER DATOS
+                        // ==================================================
+
+                        String citaId = extraerValor(body, "citaId");
+                        String estado = extraerValor(body, "estado");
+                        String fechaHora = extraerValor(body, "fechaHora");
+                        String motivo = extraerValor(body, "motivo");
 
                         context.getLogger().info(
-                                        "Evento de validación de Event Grid detectado.");
+                                        "citaId = " + citaId);
 
-                        String validationCode = extraerValor(body, "validationCode");
+                        context.getLogger().info(
+                                        "estado = " + estado);
 
-                        if (validationCode != null) {
+                        context.getLogger().info(
+                                        "fechaHora = " + fechaHora);
 
-                                String response = "{\"validationResponse\":\""
-                                                + validationCode
-                                                + "\"}";
+                        context.getLogger().info(
+                                        "motivo = " + motivo);
 
-                                context.getLogger().info(
-                                                "Respondiendo validación de Event Grid.");
+                        // ==================================================
+                        // VALIDACIONES
+                        // ==================================================
+
+                        if (citaId == null || citaId.isBlank()) {
 
                                 return request.createResponseBuilder(
-                                                HttpStatus.OK)
-                                                .header(
-                                                                "Content-Type",
-                                                                "application/json")
-                                                .body(response)
+                                                HttpStatus.BAD_REQUEST)
+                                                .body("Falta citaId.")
                                                 .build();
                         }
-                }
 
-                // ======================================================
-                // 3. PROCESAMIENTO DEL EVENTO CitaCreada
-                // ======================================================
+                        if (estado == null || estado.isBlank()) {
 
-                /*
-                 * ms-citas publica eventos con:
-                 *
-                 * eventType = CitaCreada
-                 *
-                 * Cuando llega este evento extraemos los datos
-                 * necesarios para almacenarlos en Cosmos DB.
-                 */
+                                return request.createResponseBuilder(
+                                                HttpStatus.BAD_REQUEST)
+                                                .body("Falta estado. Partition Key requerida: /estado")
+                                                .build();
+                        }
 
-                if (body.contains("\"eventType\":\"CitaCreada\"")) {
+                        // ==================================================
+                        // DOCUMENTO
+                        // ==================================================
 
-                        try {
+                        Map<String, Object> documento = new HashMap<>();
 
-                                // ------------------------------------------------
-                                // Extraer información de la cita
-                                // ------------------------------------------------
+                        documento.put(
+                                        "id",
+                                        "cita-" + citaId);
 
-                                String citaId = extraerValor(body, "citaId");
+                        documento.put(
+                                        "citaId",
+                                        Integer.parseInt(citaId));
 
-                                String estado = extraerValor(body, "estado");
+                        documento.put(
+                                        "estado",
+                                        estado);
 
-                                String fechaHora = extraerValor(body, "fechaHora");
+                        documento.put(
+                                        "fechaHora",
+                                        fechaHora != null
+                                                        ? fechaHora
+                                                        : "");
 
-                                String motivo = extraerValor(body, "motivo");
+                        documento.put(
+                                        "motivo",
+                                        motivo != null
+                                                        ? motivo
+                                                        : "");
 
-                                context.getLogger().info(
-                                                "Procesando evento CitaCreada.");
+                        documento.put(
+                                        "origen",
+                                        "ms-citas");
 
-                                context.getLogger().info(
-                                                "citaId=" + citaId
-                                                                + ", estado=" + estado);
+                        documento.put(
+                                        "evento",
+                                        "CitaCreada");
 
-                                // ------------------------------------------------
-                                // Validación mínima
-                                // ------------------------------------------------
+                        context.getLogger().info(
+                                        "DOCUMENTO: " + documento);
 
-                                if (citaId == null || estado == null) {
+                        context.getLogger().info(
+                                        "PARTITION KEY: " + estado);
 
-                                        context.getLogger().warning(
-                                                        "El evento no contiene citaId o estado.");
+                        // ==================================================
+                        // COSMOS CREATE
+                        // ==================================================
 
-                                        return request.createResponseBuilder(
-                                                        HttpStatus.BAD_REQUEST)
-                                                        .body(
-                                                                        "Evento sin datos obligatorios.")
-                                                        .build();
-                                }
+                        CosmosContainer container = getContainer();
 
-                                // ==================================================
-                                // 4. CREACIÓN DEL DOCUMENTO COSMOS
-                                // ==================================================
+                        CosmosItemResponse<Map<String, Object>> response = container.createItem(
+                                        documento,
+                                        new PartitionKey(estado),
+                                        new CosmosItemRequestOptions());
 
-                                /*
-                                 * El contenedor trazabilidad utiliza:
-                                 *
-                                 * Partition Key = /estado
-                                 *
-                                 * Por eso posteriormente utilizamos:
-                                 *
-                                 * new PartitionKey(estado)
-                                 */
+                        context.getLogger().info(
+                                        "COSMOS STATUS: "
+                                                        + response.getStatusCode());
 
-                                String documento = """
-                                                {
-                                                  "id": "cita-%s",
-                                                  "citaId": "%s",
-                                                  "estado": "%s",
-                                                  "fechaHora": "%s",
-                                                  "motivo": "%s",
-                                                  "origen": "ms-citas",
-                                                  "evento": "CitaCreada"
-                                                }
-                                                """.formatted(
-                                                citaId,
-                                                citaId,
-                                                estado,
-                                                fechaHora,
-                                                motivo);
+                        context.getLogger().info(
+                                        "COSMOS OK - documento guardado.");
 
-                                context.getLogger().info(
-                                                "Documento preparado para Cosmos DB.");
+                        return request.createResponseBuilder(
+                                        HttpStatus.OK)
+                                        .header(
+                                                        "Content-Type",
+                                                        "text/plain")
+                                        .body(
+                                                        "Cita "
+                                                                        + citaId
+                                                                        + " guardada correctamente en Cosmos DB.")
+                                        .build();
 
-                                // ==================================================
-                                // 5. PERSISTENCIA EN COSMOS DB
-                                // ==================================================
+                } catch (Exception e) {
 
-                                CosmosContainer container = getContainer();
+                        context.getLogger().severe(
+                                        "===== ERROR COSMOS =====");
 
-                                /*
-                                 * Insertamos el documento indicando como
-                                 * Partition Key el estado de la cita.
-                                 *
-                                 * Ejemplo:
-                                 *
-                                 * estado = PENDIENTE
-                                 *
-                                 * Partition Key:
-                                 *
-                                 * /estado = PENDIENTE
-                                 */
+                        context.getLogger().severe(
+                                        e.toString());
 
-                                container.createItem(
-                                                documento,
-                                                new PartitionKey(estado),
-                                                new CosmosItemRequestOptions());
-
-                                context.getLogger().info(
-                                                "Cita "
-                                                                + citaId
-                                                                + " registrada correctamente en Cosmos DB.");
-
-                        } catch (Exception e) {
-
-                                // ==================================================
-                                // 6. MANEJO DE ERRORES
-                                // ==================================================
-
+                        if (e.getMessage() != null) {
                                 context.getLogger().severe(
-                                                "Error guardando evento en Cosmos DB: "
-                                                                + e.getMessage());
-
-                                return request.createResponseBuilder(
-                                                HttpStatus.INTERNAL_SERVER_ERROR)
-                                                .body(
-                                                                "Error guardando evento en Cosmos DB.")
-                                                .build();
+                                                e.getMessage());
                         }
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .header(
+                                                        "Content-Type",
+                                                        "text/plain")
+                                        .body(
+                                                        "ERROR COSMOS: "
+                                                                        + e.getClass().getName()
+                                                                        + " - "
+                                                                        + e.getMessage())
+                                        .build();
                 }
-
-                // ==========================================================
-                // 7. RESPUESTA NORMAL
-                // ==========================================================
-
-                /*
-                 * Event Grid espera una respuesta HTTP exitosa
-                 * para considerar procesado el evento.
-                 */
-
-                return request.createResponseBuilder(
-                                HttpStatus.OK)
-                                .body(
-                                                "Evento recibido correctamente por eventoCitaJava")
-                                .build();
         }
 
         // ==========================================================
-        // MÉTODO AUXILIAR
+        // EXTRACTOR SIMPLE
         // ==========================================================
 
-        /**
-         * Extrae un valor simple desde el JSON recibido.
-         *
-         * Soporta:
-         *
-         * 1. Valores String
-         *
-         * "estado": "PENDIENTE"
-         *
-         * 2. Valores numéricos
-         *
-         * "citaId": 11
-         *
-         * Esta implementación es deliberadamente simple para
-         * mantener el proyecto liviano y evitar agregar todavía
-         * otra dependencia solamente para parsear este evento.
-         */
-        private String extraerValor(
+        private static String extraerValor(
                         String json,
                         String campo) {
 
@@ -354,13 +267,10 @@ public class EventoCitaFunction {
 
                 inicio++;
 
-                // ----------------------------------------------------------
-                // Ignorar espacios después de ":"
-                // ----------------------------------------------------------
-
                 while (inicio < json.length()
                                 && Character.isWhitespace(
                                                 json.charAt(inicio))) {
+
                         inicio++;
                 }
 
@@ -368,30 +278,45 @@ public class EventoCitaFunction {
                         return null;
                 }
 
-                // ==========================================================
-                // VALOR STRING
-                // ==========================================================
+                // STRING
 
                 if (json.charAt(inicio) == '"') {
 
                         inicio++;
 
-                        int fin = json.indexOf(
-                                        "\"",
-                                        inicio);
+                        StringBuilder resultado = new StringBuilder();
 
-                        if (fin == -1) {
-                                return null;
+                        boolean escape = false;
+
+                        for (int i = inicio; i < json.length(); i++) {
+
+                                char c = json.charAt(i);
+
+                                if (escape) {
+
+                                        resultado.append(c);
+                                        escape = false;
+                                        continue;
+                                }
+
+                                if (c == '\\') {
+
+                                        escape = true;
+                                        continue;
+                                }
+
+                                if (c == '"') {
+
+                                        return resultado.toString();
+                                }
+
+                                resultado.append(c);
                         }
 
-                        return json.substring(
-                                        inicio,
-                                        fin);
+                        return null;
                 }
 
-                // ==========================================================
-                // VALOR NUMÉRICO
-                // ==========================================================
+                // NUMBER
 
                 int fin = inicio;
 

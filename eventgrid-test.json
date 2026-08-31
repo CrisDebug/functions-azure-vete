@@ -1,0 +1,15 @@
+﻿[
+  {
+    "id": "prueba-1005",
+    "eventType": "CitaCreada",
+    "subject": "/citas/1005",
+    "eventTime": "2026-08-28T03:55:55Z",
+    "data": {
+      "citaId": 1005,
+      "estado": "CREADA",
+      "fechaHora": "2026-08-31T10:00:00",
+      "motivo": "PRUEBA FINAL EVENT GRID WEBHOOK"
+    },
+    "dataVersion": "1.0"
+  }
+]

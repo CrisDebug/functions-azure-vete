@@ -1,0 +1,1 @@
+﻿[{"id":"prueba-1002","eventType":"CitaCreada","subject":"/citas/1002","eventTime":"2026-08-30T23:50:00Z","data":{"citaId":1002,"estado":"CREADA","fechaHora":"2026-08-30T23:50:00","motivo":"PRUEBA PERSISTENCIA FINAL"},"dataVersion":"1.0"}]
