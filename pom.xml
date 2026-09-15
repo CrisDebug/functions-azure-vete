@@ -17,7 +17,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>17</java.version>
 
-        <azure.functions.maven.plugin.version>1.24.0</azure.functions.maven.plugin.version>
+        <azure.functions.maven.plugin.version>1.34.0</azure.functions.maven.plugin.version>
         <azure.functions.java.library.version>2.2.0</azure.functions.java.library.version>
 
         <!-- NUEVA FUNCTION APP CLÁSICA -->
@@ -68,7 +68,12 @@
             <artifactId>oraclepki</artifactId>
             <version>23.26.3.0.0</version>
         </dependency>
-
+        <!-- graph ql -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
+            <version>22.3</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -206,4 +211,5 @@
     </build>
 
 </project>
+
 
