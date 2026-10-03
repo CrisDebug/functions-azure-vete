@@ -615,3 +615,67 @@ El principal criterio aplicado durante la implementación fue:
 > **Modificar únicamente la capa responsable del problema, manteniendo estables los componentes que ya funcionan.**
 
 Esto permitió resolver problemas de integración sin aumentar innecesariamente la complejidad de la arquitectura.
+
+
+---
+
+# 15. Implementación de arquitectura orientada a eventos
+
+Como evolución de la arquitectura inicial, se incorporó un flujo orientado a eventos utilizando **Azure Event Grid** y **Azure Cosmos DB** para registrar la trazabilidad de eventos generados durante la creación de usuarios y roles.
+
+La arquitectura mantiene el BFF como punto de entrada y las Azure Functions como responsables de las operaciones CRUD sobre Oracle.
+
+## Arquitectura actual
+
+```text
+                         AWS EC2
+                  ┌──────────────────┐
+                  │   BFF Spring Boot│
+                  └────────┬─────────┘
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+              ▼                         ▼
+       ┌──────────────┐          ┌──────────────┐
+       │ usuariosJava │          │   rolesJava  │
+       │ Azure Function│         │ Azure Function│
+       └───────┬──────┘          └──────┬───────┘
+               │                        │
+               ▼                        ▼
+          ┌─────────┐              ┌─────────┐
+          │ Oracle  │              │ Oracle  │
+          └────┬────┘              └────┬────┘
+               │                        │
+               ▼                        ▼
+   ┌──────────────────────┐  ┌──────────────────────┐
+   │generarEventoUsuario  │  │  generarEventoRol    │
+   │        Java          │  │        Java          │
+   └──────────┬───────────┘  └──────────┬───────────┘
+              │                         │
+              └───────────┬─────────────┘
+                          ▼
+                 ┌─────────────────┐
+                 │ Azure Event Grid│
+                 │      Topic      │
+                 └────────┬────────┘
+                          │
+               ┌──────────┴──────────┐
+               │                     │
+               ▼                     ▼
+      ┌─────────────────┐   ┌─────────────────┐
+      │sub-usuarios-    │   │sub-roles-       │
+      │function         │   │function         │
+      └────────┬────────┘   └────────┬────────┘
+               │                     │
+               ▼                     ▼
+      ┌─────────────────┐   ┌─────────────────┐
+      │eventoUsuarioJava│   │eventoRolJava    │
+      │ EventGridTrigger│   │ EventGridTrigger│
+      └────────┬────────┘   └────────┬────────┘
+               │                     │
+               └──────────┬──────────┘
+                          ▼
+                  ┌────────────────┐
+                  │   Cosmos DB    │
+                  │  trazabilidad  │
+                  └────────────────┘
