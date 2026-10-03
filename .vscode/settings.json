@@ -7,4 +7,3 @@
     "azureFunctions.preDeployTask": "package (functions)",
     "java.configuration.updateBuildConfiguration": "interactive"
 }
-

@@ -16,444 +16,503 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.Optional;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
 public class RolesFunction {
 
-    /*
-     * ============================================================
-     * CRUD DE ROLES
-     * ============================================================
-     *
-     * Una sola Azure Function administra el recurso ROL.
-     *
-     * GET -> Listar roles
-     * POST -> Crear rol
-     * PUT -> Actualizar rol
-     * DELETE -> Eliminar rol
-     *
-     * Actualmente implementados:
-     * GET + POST
-     * ============================================================
-     */
-
-    @FunctionName("rolesJava")
-    public HttpResponseMessage run(
-
-            @HttpTrigger(name = "req", methods = {
-                    HttpMethod.GET,
-                    HttpMethod.POST,
-                    HttpMethod.PUT,
-                    HttpMethod.DELETE
-            }, authLevel = AuthorizationLevel.ANONYMOUS) HttpRequestMessage<Optional<String>> request,
-
-            final ExecutionContext context) {
-
         /*
-         * ========================================================
-         * ENRUTAMIENTO DE PETICIONES HTTP
-         * ========================================================
+         * ============================================================
+         * CRUD DE ROLES
+         * ============================================================
          *
-         * La misma Function recibe las peticiones.
-         * El método HTTP determina qué operación ejecutar.
+         * Una sola Azure Function administra el recurso ROL.
+         *
+         * GET -> Listar roles
+         * POST -> Crear rol
+         * PUT -> Actualizar rol
+         * DELETE -> Eliminar rol
+         *
+         * Actualmente implementados:
+         * GET + POST
+         * ============================================================
          */
 
-        if (request.getHttpMethod() == HttpMethod.GET) {
+        @FunctionName("rolesJava")
+        public HttpResponseMessage run(
 
-            return listarRoles(request, context);
+                        @HttpTrigger(name = "req", methods = {
+                                        HttpMethod.GET,
+                                        HttpMethod.POST,
+                                        HttpMethod.PUT,
+                                        HttpMethod.DELETE
+                        }, authLevel = AuthorizationLevel.ANONYMOUS) HttpRequestMessage<Optional<String>> request,
 
-        } else if (request.getHttpMethod() == HttpMethod.POST) {
+                        final ExecutionContext context) {
 
-            return crearRol(request, context);
-        } else if (request.getHttpMethod() == HttpMethod.PUT) {
+                /*
+                 * ========================================================
+                 * ENRUTAMIENTO DE PETICIONES HTTP
+                 * ========================================================
+                 *
+                 * La misma Function recibe las peticiones.
+                 * El método HTTP determina qué operación ejecutar.
+                 */
 
-            return actualizarRol(request, context);
-        } else if (request.getHttpMethod() == HttpMethod.DELETE) {
+                if (request.getHttpMethod() == HttpMethod.GET) {
 
-            return eliminarRol(request, context);
+                        return listarRoles(request, context);
+
+                } else if (request.getHttpMethod() == HttpMethod.POST) {
+
+                        return crearRol(request, context);
+                } else if (request.getHttpMethod() == HttpMethod.PUT) {
+
+                        return actualizarRol(request, context);
+                } else if (request.getHttpMethod() == HttpMethod.DELETE) {
+
+                        return eliminarRol(request, context);
+                }
+                return request.createResponseBuilder(
+                                HttpStatus.METHOD_NOT_ALLOWED)
+                                .body("Método HTTP no permitido.")
+                                .build();
         }
-        return request.createResponseBuilder(
-                HttpStatus.METHOD_NOT_ALLOWED)
-                .body("Método HTTP no permitido.")
-                .build();
-    }
 
-    /*
-     * ============================================================
-     * MÉTODO HTTP: GET
-     * OPERACIÓN: LISTAR ROLES
-     * ============================================================
-     *
-     * GET /api/rolesJava
-     */
+        /*
+         * ============================================================
+         * MÉTODO HTTP: GET
+         * OPERACIÓN: LISTAR ROLES
+         * ============================================================
+         *
+         * GET /api/rolesJava
+         */
 
-    private HttpResponseMessage listarRoles(
-            HttpRequestMessage<Optional<String>> request,
-            ExecutionContext context) {
+        private HttpResponseMessage listarRoles(
+                        HttpRequestMessage<Optional<String>> request,
+                        ExecutionContext context) {
 
-        context.getLogger().info(
-                "rolesJava proceso una solicitud GET.");
+                context.getLogger().info(
+                                "rolesJava proceso una solicitud GET.");
 
-        String sql = "SELECT ID, NOMBRE FROM ROL ORDER BY ID";
+                String sql = "SELECT ID, NOMBRE FROM ROL ORDER BY ID";
 
-        StringBuilder json = new StringBuilder("[");
+                StringBuilder json = new StringBuilder("[");
 
-        boolean primero = true;
+                boolean primero = true;
 
-        try (
-                Connection connection = OracleConnection.getConnection();
+                try (
+                                Connection connection = OracleConnection.getConnection();
 
-                PreparedStatement statement = connection.prepareStatement(sql);
+                                PreparedStatement statement = connection.prepareStatement(sql);
 
-                ResultSet resultSet = statement.executeQuery()) {
+                                ResultSet resultSet = statement.executeQuery()) {
 
-            while (resultSet.next()) {
+                        while (resultSet.next()) {
 
-                if (!primero) {
-                    json.append(",");
+                                if (!primero) {
+                                        json.append(",");
+                                }
+
+                                json.append("{")
+                                                .append("\"id\":")
+                                                .append(resultSet.getLong("ID"))
+                                                .append(",\"nombre\":\"")
+                                                .append(resultSet.getString("NOMBRE"))
+                                                .append("\"}");
+
+                                primero = false;
+                        }
+
+                        json.append("]");
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.OK)
+                                        .header(
+                                                        "Content-Type",
+                                                        "application/json")
+                                        .body(json.toString())
+                                        .build();
+
+                } catch (Exception e) {
+
+                        context.getLogger().severe(
+                                        "Error al consultar roles: "
+                                                        + e.getMessage());
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body("ERROR ORACLE: " + e.getClass().getName() + " - " + e.getMessage())
+                                        .build();
+                }
+        }
+
+        /*
+         * ============================================================
+         * MÉTODO HTTP: POST
+         * OPERACIÓN: CREAR ROL
+         * ============================================================
+         *
+         * POST /api/rolesJava
+         *
+         * Body:
+         *
+         * {
+         * "nombre": "Veterinario"
+         * }
+         */
+
+        private HttpResponseMessage crearRol(
+                        HttpRequestMessage<Optional<String>> request,
+                        ExecutionContext context) {
+
+                context.getLogger().info(
+                                "rolesJava proceso una solicitud POST.");
+
+                Optional<String> body = request.getBody();
+
+                // Validar que exista cuerpo
+
+                if (body.isEmpty()
+                                || body.get().isBlank()) {
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body(
+                                                        "El cuerpo de la solicitud es obligatorio.")
+                                        .build();
                 }
 
-                json.append("{")
-                        .append("\"id\":")
-                        .append(resultSet.getLong("ID"))
-                        .append(",\"nombre\":\"")
-                        .append(resultSet.getString("NOMBRE"))
-                        .append("\"}");
+                // Extraer nombre
 
-                primero = false;
-            }
+                String nombre = extraerNombre(body.get());
 
-            json.append("]");
+                // Validar nombre
 
-            return request.createResponseBuilder(
-                    HttpStatus.OK)
-                    .header(
-                            "Content-Type",
-                            "application/json")
-                    .body(json.toString())
-                    .build();
+                if (nombre == null
+                                || nombre.isBlank()) {
 
-        } catch (Exception e) {
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body(
+                                                        "El campo nombre es obligatorio.")
+                                        .build();
+                }
 
-            context.getLogger().severe(
-                    "Error al consultar roles: "
-                            + e.getMessage());
+                String sql = "INSERT INTO ROL (NOMBRE) VALUES (?)";
 
-            return request.createResponseBuilder(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("ERROR ORACLE: " + e.getClass().getName() + " - " + e.getMessage())
-                    .build();
-        }
-    }
+                try (
+                                Connection connection = OracleConnection.getConnection();
 
-    /*
-     * ============================================================
-     * MÉTODO HTTP: POST
-     * OPERACIÓN: CREAR ROL
-     * ============================================================
-     *
-     * POST /api/rolesJava
-     *
-     * Body:
-     *
-     * {
-     * "nombre": "Veterinario"
-     * }
-     */
+                                PreparedStatement statement = connection.prepareStatement(sql)) {
 
-    private HttpResponseMessage crearRol(
-            HttpRequestMessage<Optional<String>> request,
-            ExecutionContext context) {
+                        statement.setString(1, nombre);
 
-        context.getLogger().info(
-                "rolesJava proceso una solicitud POST.");
+                        statement.executeUpdate();
 
-        Optional<String> body = request.getBody();
+                        context.getLogger().info(
+                                        "Rol creado correctamente: "
+                                                        + nombre);
 
-        // Validar que exista cuerpo
+                        // Publicar evento RolCreado
+                        publicarEventoRol(nombre, context);
 
-        if (body.isEmpty()
-                || body.get().isBlank()) {
+                        context.getLogger().info(
+                                        "Evento RolCreado solicitado para: "
+                                                        + nombre);
 
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body(
-                            "El cuerpo de la solicitud es obligatorio.")
-                    .build();
+                        return request.createResponseBuilder(
+                                        HttpStatus.CREATED)
+                                        .body(
+                                                        "Rol creado correctamente.")
+                                        .build();
+
+                } catch (Exception e) {
+
+                        context.getLogger().severe(
+                                        "Error al crear rol: "
+                                                        + e.getMessage());
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(
+                                                        "Error al crear el rol.")
+                                        .build();
+                }
         }
 
-        // Extraer nombre
+        /*
+         * ============================================================
+         * UTILIDAD
+         * EXTRAER NOMBRE DEL JSON
+         * ============================================================
+         */
 
-        String nombre = extraerNombre(body.get());
+        private String extraerNombre(String body) {
 
-        // Validar nombre
+                String limpio = body.trim();
 
-        if (nombre == null
-                || nombre.isBlank()) {
+                limpio = limpio
+                                .replace("{", "")
+                                .replace("}", "")
+                                .replace("\"", "");
 
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body(
-                            "El campo nombre es obligatorio.")
-                    .build();
+                String[] partes = limpio.split(":");
+
+                if (partes.length < 2) {
+                        return null;
+                }
+
+                return partes[1].trim();
         }
 
-        String sql = "INSERT INTO ROL (NOMBRE) VALUES (?)";
+        /*
+         * ============================================================
+         * MÉTODO HTTP: PUT
+         * OPERACIÓN: ACTUALIZAR ROL
+         * ============================================================
+         *
+         * Endpoint:
+         * PUT http://localhost:7071/api/rolesJava
+         *
+         * Body:
+         * {
+         * "id": 2,
+         * "nombre": "Veterinario Senior"
+         * }
+         */
 
-        try (
-                Connection connection = OracleConnection.getConnection();
+        private HttpResponseMessage actualizarRol(
+                        HttpRequestMessage<Optional<String>> request,
+                        ExecutionContext context) {
 
-                PreparedStatement statement = connection.prepareStatement(sql)) {
+                context.getLogger().info(
+                                "rolesJava proceso una solicitud PUT.");
 
-            statement.setString(1, nombre);
+                Optional<String> body = request.getBody();
 
-            statement.executeUpdate();
+                // Validar cuerpo
+                if (body.isEmpty() || body.get().isBlank()) {
 
-            context.getLogger().info(
-                    "Rol creado correctamente: "
-                            + nombre);
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("El cuerpo de la solicitud es obligatorio.")
+                                        .build();
+                }
 
-            return request.createResponseBuilder(
-                    HttpStatus.CREATED)
-                    .body(
-                            "Rol creado correctamente.")
-                    .build();
+                String contenido = body.get()
+                                .replace("{", "")
+                                .replace("}", "")
+                                .replace("\"", "");
 
-        } catch (Exception e) {
+                String[] campos = contenido.split(",");
 
-            context.getLogger().severe(
-                    "Error al crear rol: "
-                            + e.getMessage());
+                Integer id = null;
+                String nombre = null;
 
-            return request.createResponseBuilder(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(
-                            "Error al crear el rol.")
-                    .build();
-        }
-    }
+                // Extraer ID y nombre
+                for (String campo : campos) {
 
-    /*
-     * ============================================================
-     * UTILIDAD
-     * EXTRAER NOMBRE DEL JSON
-     * ============================================================
-     */
+                        String[] partes = campo.split(":");
 
-    private String extraerNombre(String body) {
+                        if (partes.length < 2) {
+                                continue;
+                        }
 
-        String limpio = body.trim();
+                        String clave = partes[0].trim();
+                        String valor = partes[1].trim();
 
-        limpio = limpio
-                .replace("{", "")
-                .replace("}", "")
-                .replace("\"", "");
+                        if (clave.equals("id")) {
+                                id = Integer.parseInt(valor);
+                        }
 
-        String[] partes = limpio.split(":");
+                        if (clave.equals("nombre")) {
+                                nombre = valor;
+                        }
+                }
 
-        if (partes.length < 2) {
-            return null;
-        }
+                // Validar datos
+                if (id == null || nombre == null || nombre.isBlank()) {
 
-        return partes[1].trim();
-    }
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("Los campos id y nombre son obligatorios.")
+                                        .build();
+                }
 
-    /*
-     * ============================================================
-     * MÉTODO HTTP: PUT
-     * OPERACIÓN: ACTUALIZAR ROL
-     * ============================================================
-     *
-     * Endpoint:
-     * PUT http://localhost:7071/api/rolesJava
-     *
-     * Body:
-     * {
-     * "id": 2,
-     * "nombre": "Veterinario Senior"
-     * }
-     */
+                String sql = "UPDATE ROL SET NOMBRE = ? WHERE ID = ?";
 
-    private HttpResponseMessage actualizarRol(
-            HttpRequestMessage<Optional<String>> request,
-            ExecutionContext context) {
+                try (
+                                Connection connection = OracleConnection.getConnection();
 
-        context.getLogger().info(
-                "rolesJava proceso una solicitud PUT.");
+                                PreparedStatement statement = connection.prepareStatement(sql)) {
 
-        Optional<String> body = request.getBody();
+                        statement.setString(1, nombre);
+                        statement.setInt(2, id);
 
-        // Validar cuerpo
-        if (body.isEmpty() || body.get().isBlank()) {
+                        int filasActualizadas = statement.executeUpdate();
 
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body("El cuerpo de la solicitud es obligatorio.")
-                    .build();
-        }
+                        if (filasActualizadas == 0) {
 
-        String contenido = body.get()
-                .replace("{", "")
-                .replace("}", "")
-                .replace("\"", "");
+                                return request.createResponseBuilder(
+                                                HttpStatus.NOT_FOUND)
+                                                .body("El rol no existe.")
+                                                .build();
+                        }
 
-        String[] campos = contenido.split(",");
+                        context.getLogger().info(
+                                        "Rol actualizado correctamente: " + id);
 
-        Integer id = null;
-        String nombre = null;
+                        return request.createResponseBuilder(
+                                        HttpStatus.OK)
+                                        .body("Rol actualizado correctamente.")
+                                        .build();
 
-        // Extraer ID y nombre
-        for (String campo : campos) {
+                } catch (Exception e) {
 
-            String[] partes = campo.split(":");
+                        context.getLogger().severe(
+                                        "Error al actualizar rol: "
+                                                        + e.getMessage());
 
-            if (partes.length < 2) {
-                continue;
-            }
-
-            String clave = partes[0].trim();
-            String valor = partes[1].trim();
-
-            if (clave.equals("id")) {
-                id = Integer.parseInt(valor);
-            }
-
-            if (clave.equals("nombre")) {
-                nombre = valor;
-            }
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body("Error al actualizar el rol.")
+                                        .build();
+                }
         }
 
-        // Validar datos
-        if (id == null || nombre == null || nombre.isBlank()) {
+        /*
+         * ============================================================
+         * MÉTODO HTTP: DELETE
+         * OPERACIÓN: ELIMINAR ROL
+         * ============================================================
+         *
+         * Endpoint:
+         * DELETE http://localhost:7071/api/rolesJava?id=2
+         *
+         * El ID se recibe mediante Query Parameter.
+         */
 
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body("Los campos id y nombre son obligatorios.")
-                    .build();
+        private HttpResponseMessage eliminarRol(
+                        HttpRequestMessage<Optional<String>> request,
+                        ExecutionContext context) {
+
+                context.getLogger().info(
+                                "rolesJava proceso una solicitud DELETE.");
+
+                // Obtener ID desde el Query Parameter
+                String idParametro = request.getQueryParameters().get("id");
+
+                // Validar que exista el ID
+                if (idParametro == null || idParametro.isBlank()) {
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("El parámetro id es obligatorio.")
+                                        .build();
+                }
+
+                int id;
+
+                try {
+
+                        id = Integer.parseInt(idParametro);
+
+                } catch (NumberFormatException e) {
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("El parámetro id debe ser numérico.")
+                                        .build();
+                }
+
+                String sql = "DELETE FROM ROL WHERE ID = ?";
+
+                try (
+                                Connection connection = OracleConnection.getConnection();
+
+                                PreparedStatement statement = connection.prepareStatement(sql)) {
+
+                        statement.setInt(1, id);
+
+                        int filasEliminadas = statement.executeUpdate();
+
+                        if (filasEliminadas == 0) {
+
+                                return request.createResponseBuilder(
+                                                HttpStatus.NOT_FOUND)
+                                                .body("El rol no existe.")
+                                                .build();
+                        }
+
+                        context.getLogger().info(
+                                        "Rol eliminado correctamente: " + id);
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.OK)
+                                        .body("Rol eliminado correctamente.")
+                                        .build();
+
+                } catch (Exception e) {
+
+                        context.getLogger().severe(
+                                        "Error al eliminar rol: "
+                                                        + e.getMessage());
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body("Error al eliminar el rol.")
+                                        .build();
+                }
         }
 
-        String sql = "UPDATE ROL SET NOMBRE = ? WHERE ID = ?";
+        private void publicarEventoRol(
+                        String nombre,
+                        ExecutionContext context) {
 
-        try (
-                Connection connection = OracleConnection.getConnection();
+                try {
+                        String endpoint = System.getenv("GENERAR_EVENTO_ROL_URL");
 
-                PreparedStatement statement = connection.prepareStatement(sql)) {
+                        if (endpoint == null || endpoint.isBlank()) {
+                                context.getLogger().warning(
+                                                "GENERAR_EVENTO_ROL_URL no está configurada.");
+                                return;
+                        }
 
-            statement.setString(1, nombre);
-            statement.setInt(2, id);
+                        String json = String.format(
+                                        "{\"nombre\":\"%s\"}",
+                                        nombre);
 
-            int filasActualizadas = statement.executeUpdate();
+                        HttpRequest request = HttpRequest.newBuilder()
+                                        .uri(URI.create(endpoint))
+                                        .header("Content-Type", "application/json")
+                                        .POST(HttpRequest.BodyPublishers.ofString(json))
+                                        .build();
 
-            if (filasActualizadas == 0) {
+                        HttpClient client = HttpClient.newHttpClient();
 
-                return request.createResponseBuilder(
-                        HttpStatus.NOT_FOUND)
-                        .body("El rol no existe.")
-                        .build();
-            }
+                        HttpResponse<String> response = client.send(
+                                        request,
+                                        HttpResponse.BodyHandlers.ofString());
 
-            context.getLogger().info(
-                    "Rol actualizado correctamente: " + id);
+                        context.getLogger().info(
+                                        "Respuesta generarEventoRolJava: "
+                                                        + response.statusCode());
 
-            return request.createResponseBuilder(
-                    HttpStatus.OK)
-                    .body("Rol actualizado correctamente.")
-                    .build();
+                        if (response.statusCode() < 200
+                                        || response.statusCode() >= 300) {
 
-        } catch (Exception e) {
+                                context.getLogger().warning(
+                                                "No se pudo publicar el evento RolCreado. "
+                                                                + response.body());
+                        }
 
-            context.getLogger().severe(
-                    "Error al actualizar rol: "
-                            + e.getMessage());
-
-            return request.createResponseBuilder(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error al actualizar el rol.")
-                    .build();
+                } catch (Exception e) {
+                        context.getLogger().severe(
+                                        "Error al invocar generarEventoRolJava: "
+                                                        + e.getMessage());
+                }
         }
-    }
-
-    /*
-     * ============================================================
-     * MÉTODO HTTP: DELETE
-     * OPERACIÓN: ELIMINAR ROL
-     * ============================================================
-     *
-     * Endpoint:
-     * DELETE http://localhost:7071/api/rolesJava?id=2
-     *
-     * El ID se recibe mediante Query Parameter.
-     */
-
-    private HttpResponseMessage eliminarRol(
-            HttpRequestMessage<Optional<String>> request,
-            ExecutionContext context) {
-
-        context.getLogger().info(
-                "rolesJava proceso una solicitud DELETE.");
-
-        // Obtener ID desde el Query Parameter
-        String idParametro = request.getQueryParameters().get("id");
-
-        // Validar que exista el ID
-        if (idParametro == null || idParametro.isBlank()) {
-
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body("El parámetro id es obligatorio.")
-                    .build();
-        }
-
-        int id;
-
-        try {
-
-            id = Integer.parseInt(idParametro);
-
-        } catch (NumberFormatException e) {
-
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body("El parámetro id debe ser numérico.")
-                    .build();
-        }
-
-        String sql = "DELETE FROM ROL WHERE ID = ?";
-
-        try (
-                Connection connection = OracleConnection.getConnection();
-
-                PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setInt(1, id);
-
-            int filasEliminadas = statement.executeUpdate();
-
-            if (filasEliminadas == 0) {
-
-                return request.createResponseBuilder(
-                        HttpStatus.NOT_FOUND)
-                        .body("El rol no existe.")
-                        .build();
-            }
-
-            context.getLogger().info(
-                    "Rol eliminado correctamente: " + id);
-
-            return request.createResponseBuilder(
-                    HttpStatus.OK)
-                    .body("Rol eliminado correctamente.")
-                    .build();
-
-        } catch (Exception e) {
-
-            context.getLogger().severe(
-                    "Error al eliminar rol: "
-                            + e.getMessage());
-
-            return request.createResponseBuilder(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error al eliminar el rol.")
-                    .build();
-        }
-    }
-
 }

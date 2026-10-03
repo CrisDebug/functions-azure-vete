@@ -16,489 +16,555 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.Optional;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
 public class UsuariosFunction {
 
-    /*
-     * ============================================================
-     * CRUD DE USUARIOS
-     * ============================================================
-     *
-     * GET -> Listar usuarios
-     * POST -> Crear usuario
-     * PUT -> Actualizar usuario
-     * DELETE -> Eliminar usuario
-     *
-     * Por ahora implementamos SOLO GET.
-     * ============================================================
-     */
-
-    @FunctionName("usuariosJava")
-    public HttpResponseMessage run(
-
-            @HttpTrigger(name = "req", methods = {
-                    HttpMethod.GET,
-                    HttpMethod.POST,
-                    HttpMethod.PUT,
-                    HttpMethod.DELETE
-            }, authLevel = AuthorizationLevel.ANONYMOUS) HttpRequestMessage<Optional<String>> request,
-
-            final ExecutionContext context) {
-
         /*
-         * ========================================================
-         * MÉTODO HTTP: GET
-         * OPERACIÓN: LISTAR USUARIOS
-         * ========================================================
+         * ============================================================
+         * CRUD DE USUARIOS
+         * ============================================================
+         *
+         * GET -> Listar usuarios
+         * POST -> Crear usuario
+         * PUT -> Actualizar usuario
+         * DELETE -> Eliminar usuario
+         *
+         * Por ahora implementamos SOLO GET.
+         * ============================================================
          */
 
-        if (request.getHttpMethod() == HttpMethod.GET) {
+        @FunctionName("usuariosJava")
+        public HttpResponseMessage run(
 
-            return listarUsuarios(request, context);
+                        @HttpTrigger(name = "req", methods = {
+                                        HttpMethod.GET,
+                                        HttpMethod.POST,
+                                        HttpMethod.PUT,
+                                        HttpMethod.DELETE
+                        }, authLevel = AuthorizationLevel.ANONYMOUS) HttpRequestMessage<Optional<String>> request,
 
-        } else if (request.getHttpMethod() == HttpMethod.POST) {
+                        final ExecutionContext context) {
 
-            return crearUsuario(request, context);
-        } else if (request.getHttpMethod() == HttpMethod.PUT)
+                /*
+                 * ========================================================
+                 * MÉTODO HTTP: GET
+                 * OPERACIÓN: LISTAR USUARIOS
+                 * ========================================================
+                 */
 
-        {
+                if (request.getHttpMethod() == HttpMethod.GET) {
 
-            return actualizarUsuario(request, context);
-        } else if (request.getHttpMethod() == HttpMethod.DELETE) {
+                        return listarUsuarios(request, context);
 
-            return eliminarUsuario(request, context);
-        }
+                } else if (request.getHttpMethod() == HttpMethod.POST) {
 
-        return request.createResponseBuilder(HttpStatus.METHOD_NOT_ALLOWED).body("Método HTTP no permitido.").build();
+                        return crearUsuario(request, context);
+                } else if (request.getHttpMethod() == HttpMethod.PUT)
 
-    }
+                {
 
-    /*
-     * ============================================================
-     * MÉTODO HTTP: GET
-     * OPERACIÓN: LISTAR USUARIOS
-     * ============================================================
-     *
-     * Endpoint:
-     * GET http://localhost:7071/api/usuariosJava
-     *
-     * Consulta:
-     * USUARIO + ROL
-     */
+                        return actualizarUsuario(request, context);
+                } else if (request.getHttpMethod() == HttpMethod.DELETE) {
 
-    private HttpResponseMessage listarUsuarios(
-            HttpRequestMessage<Optional<String>> request,
-            ExecutionContext context) {
-
-        context.getLogger().info(
-                "usuariosJava proceso una solicitud GET.");
-
-        String sql = "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
-                "FROM USUARIO u " +
-                "INNER JOIN ROL r ON u.ROL_ID = r.ID " +
-                "ORDER BY u.ID";
-
-        StringBuilder json = new StringBuilder("[");
-
-        boolean primero = true;
-
-        try (
-                Connection connection = OracleConnection.getConnection();
-
-                PreparedStatement statement = connection.prepareStatement(sql);
-
-                ResultSet resultSet = statement.executeQuery()) {
-
-            while (resultSet.next()) {
-
-                if (!primero) {
-                    json.append(",");
+                        return eliminarUsuario(request, context);
                 }
 
-                json.append("{")
-                        .append("\"id\":")
-                        .append(resultSet.getLong("ID"))
-                        .append(",\"nombre\":\"")
-                        .append(resultSet.getString("NOMBRE"))
-                        .append("\"")
-                        .append(",\"email\":\"")
-                        .append(resultSet.getString("EMAIL"))
-                        .append("\"")
-                        .append(",\"rolId\":")
-                        .append(resultSet.getLong("ROL_ID"))
-                        .append(",\"rol\":\"")
-                        .append(resultSet.getString("ROL"))
-                        .append("\"")
-                        .append("}");
+                return request.createResponseBuilder(HttpStatus.METHOD_NOT_ALLOWED).body("Método HTTP no permitido.")
+                                .build();
 
-                primero = false;
-            }
-
-            json.append("]");
-
-            return request.createResponseBuilder(
-                    HttpStatus.OK)
-                    .header(
-                            "Content-Type",
-                            "application/json")
-                    .body(json.toString())
-                    .build();
-
-        } catch (Exception e) {
-
-            context.getLogger().severe(
-                    "Error al consultar usuarios: "
-                            + e.getMessage());
-
-            return request.createResponseBuilder(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(
-                            "Error al consultar los usuarios.")
-                    .build();
-        }
-    }
-
-    /*
-     * ============================================================
-     * MÉTODO HTTP: POST
-     * OPERACIÓN: CREAR USUARIO
-     * ============================================================
-     *
-     * Endpoint:
-     * POST http://localhost:7071/api/usuariosJava
-     *
-     * Body:
-     * {
-     * "nombre": "Maria Lopez",
-     * "email": "maria.lopez@test.cl",
-     * "password": "123456",
-     * "rolId": 1
-     * }
-     */
-
-    private HttpResponseMessage crearUsuario(
-            HttpRequestMessage<Optional<String>> request,
-            ExecutionContext context) {
-
-        context.getLogger().info(
-                "usuariosJava proceso una solicitud POST.");
-
-        Optional<String> body = request.getBody();
-
-        if (body.isEmpty() || body.get().isBlank()) {
-
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body("El cuerpo de la solicitud es obligatorio.")
-                    .build();
         }
 
-        String contenido = body.get()
-                .replace("{", "")
-                .replace("}", "")
-                .replace("\"", "");
+        /*
+         * ============================================================
+         * MÉTODO HTTP: GET
+         * OPERACIÓN: LISTAR USUARIOS
+         * ============================================================
+         *
+         * Endpoint:
+         * GET http://localhost:7071/api/usuariosJava
+         *
+         * Consulta:
+         * USUARIO + ROL
+         */
 
-        String[] campos = contenido.split(",");
+        private HttpResponseMessage listarUsuarios(
+                        HttpRequestMessage<Optional<String>> request,
+                        ExecutionContext context) {
 
-        String nombre = null;
-        String email = null;
-        String password = null;
-        Integer rolId = null;
+                context.getLogger().info(
+                                "usuariosJava proceso una solicitud GET.");
 
-        for (String campo : campos) {
+                String sql = "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
+                                "FROM USUARIO u " +
+                                "INNER JOIN ROL r ON u.ROL_ID = r.ID " +
+                                "ORDER BY u.ID";
 
-            String[] partes = campo.split(":");
+                StringBuilder json = new StringBuilder("[");
 
-            if (partes.length < 2) {
-                continue;
-            }
+                boolean primero = true;
 
-            String clave = partes[0].trim();
-            String valor = partes[1].trim();
+                try (
+                                Connection connection = OracleConnection.getConnection();
 
-            if (clave.equals("nombre")) {
-                nombre = valor;
-            }
+                                PreparedStatement statement = connection.prepareStatement(sql);
 
-            if (clave.equals("email")) {
-                email = valor;
-            }
+                                ResultSet resultSet = statement.executeQuery()) {
 
-            if (clave.equals("password")) {
-                password = valor;
-            }
+                        while (resultSet.next()) {
 
-            if (clave.equals("rolId")) {
-                rolId = Integer.parseInt(valor);
-            }
+                                if (!primero) {
+                                        json.append(",");
+                                }
+
+                                json.append("{")
+                                                .append("\"id\":")
+                                                .append(resultSet.getLong("ID"))
+                                                .append(",\"nombre\":\"")
+                                                .append(resultSet.getString("NOMBRE"))
+                                                .append("\"")
+                                                .append(",\"email\":\"")
+                                                .append(resultSet.getString("EMAIL"))
+                                                .append("\"")
+                                                .append(",\"rolId\":")
+                                                .append(resultSet.getLong("ROL_ID"))
+                                                .append(",\"rol\":\"")
+                                                .append(resultSet.getString("ROL"))
+                                                .append("\"")
+                                                .append("}");
+
+                                primero = false;
+                        }
+
+                        json.append("]");
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.OK)
+                                        .header(
+                                                        "Content-Type",
+                                                        "application/json")
+                                        .body(json.toString())
+                                        .build();
+
+                } catch (Exception e) {
+
+                        context.getLogger().severe(
+                                        "Error al consultar usuarios: "
+                                                        + e.getMessage());
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(
+                                                        "Error al consultar los usuarios.")
+                                        .build();
+                }
         }
 
-        if (nombre == null || nombre.isBlank()
-                || email == null || email.isBlank()
-                || password == null || password.isBlank()
-                || rolId == null) {
+        /*
+         * ============================================================
+         * MÉTODO HTTP: POST
+         * OPERACIÓN: CREAR USUARIO
+         * ============================================================
+         *
+         * Endpoint:
+         * POST http://localhost:7071/api/usuariosJava
+         *
+         * Body:
+         * {
+         * "nombre": "Maria Lopez",
+         * "email": "maria.lopez@test.cl",
+         * "password": "123456",
+         * "rolId": 1
+         * }
+         */
 
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body(
-                            "Los campos nombre, email, password y rolId son obligatorios.")
-                    .build();
+        private HttpResponseMessage crearUsuario(
+                        HttpRequestMessage<Optional<String>> request,
+                        ExecutionContext context) {
+
+                context.getLogger().info(
+                                "usuariosJava proceso una solicitud POST.");
+
+                Optional<String> body = request.getBody();
+
+                if (body.isEmpty() || body.get().isBlank()) {
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("El cuerpo de la solicitud es obligatorio.")
+                                        .build();
+                }
+
+                String contenido = body.get()
+                                .replace("{", "")
+                                .replace("}", "")
+                                .replace("\"", "");
+
+                String[] campos = contenido.split(",");
+
+                String nombre = null;
+                String email = null;
+                String password = null;
+                Integer rolId = null;
+
+                for (String campo : campos) {
+
+                        String[] partes = campo.split(":");
+
+                        if (partes.length < 2) {
+                                continue;
+                        }
+
+                        String clave = partes[0].trim();
+                        String valor = partes[1].trim();
+
+                        if (clave.equals("nombre")) {
+                                nombre = valor;
+                        }
+
+                        if (clave.equals("email")) {
+                                email = valor;
+                        }
+
+                        if (clave.equals("password")) {
+                                password = valor;
+                        }
+
+                        if (clave.equals("rolId")) {
+                                rolId = Integer.parseInt(valor);
+                        }
+                }
+
+                if (nombre == null || nombre.isBlank()
+                                || email == null || email.isBlank()
+                                || password == null || password.isBlank()
+                                || rolId == null) {
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body(
+                                                        "Los campos nombre, email, password y rolId son obligatorios.")
+                                        .build();
+                }
+
+                String sql = "INSERT INTO USUARIO " +
+                                "(NOMBRE, EMAIL, PASSWORD, ROL_ID) " +
+                                "VALUES (?, ?, ?, ?)";
+
+                try (
+                                Connection connection = OracleConnection.getConnection();
+
+                                PreparedStatement statement = connection.prepareStatement(sql)) {
+
+                        statement.setString(1, nombre);
+                        statement.setString(2, email);
+                        statement.setString(3, password);
+                        statement.setInt(4, rolId);
+
+                        statement.executeUpdate();
+
+                        context.getLogger().info(
+                                        "Usuario creado correctamente: " + email);
+
+                        // Publicar evento UsuarioCreado
+                        publicarEventoUsuario(email, rolId, context);
+
+                        context.getLogger().info(
+                                        "Evento UsuarioCreado solicitado para: " + email);
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.CREATED)
+                                        .body("Usuario creado correctamente.")
+                                        .build();
+
+                } catch (Exception e) {
+
+                        context.getLogger().severe(
+                                        "Error al crear usuario: "
+                                                        + e.getMessage());
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body("Error al crear el usuario.")
+                                        .build();
+                }
         }
 
-        String sql = "INSERT INTO USUARIO " +
-                "(NOMBRE, EMAIL, PASSWORD, ROL_ID) " +
-                "VALUES (?, ?, ?, ?)";
+        /*
+         * ============================================================
+         * MÉTODO HTTP: PUT
+         * OPERACIÓN: ACTUALIZAR USUARIO
+         * ============================================================
+         *
+         * Endpoint:
+         * PUT http://localhost:7071/api/usuariosJava
+         *
+         * Body:
+         * {
+         * "id": 2,
+         * "nombre": "Maria Lopez Actualizada",
+         * "email": "maria.actualizada@test.cl",
+         * "password": "123456",
+         * "rolId": 1
+         * }
+         */
 
-        try (
-                Connection connection = OracleConnection.getConnection();
+        private HttpResponseMessage actualizarUsuario(
+                        HttpRequestMessage<Optional<String>> request,
+                        ExecutionContext context) {
 
-                PreparedStatement statement = connection.prepareStatement(sql)) {
+                context.getLogger().info(
+                                "usuariosJava proceso una solicitud PUT.");
 
-            statement.setString(1, nombre);
-            statement.setString(2, email);
-            statement.setString(3, password);
-            statement.setInt(4, rolId);
+                Optional<String> body = request.getBody();
 
-            statement.executeUpdate();
+                if (body.isEmpty() || body.get().isBlank()) {
 
-            context.getLogger().info(
-                    "Usuario creado correctamente: " + email);
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("El cuerpo de la solicitud es obligatorio.")
+                                        .build();
+                }
 
-            return request.createResponseBuilder(
-                    HttpStatus.CREATED)
-                    .body("Usuario creado correctamente.")
-                    .build();
+                String contenido = body.get()
+                                .replace("{", "")
+                                .replace("}", "")
+                                .replace("\"", "");
 
-        } catch (Exception e) {
+                String[] campos = contenido.split(",");
 
-            context.getLogger().severe(
-                    "Error al crear usuario: "
-                            + e.getMessage());
+                Integer id = null;
+                String nombre = null;
+                String email = null;
+                String password = null;
+                Integer rolId = null;
 
-            return request.createResponseBuilder(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error al crear el usuario.")
-                    .build();
-        }
-    }
+                for (String campo : campos) {
 
-    /*
-     * ============================================================
-     * MÉTODO HTTP: PUT
-     * OPERACIÓN: ACTUALIZAR USUARIO
-     * ============================================================
-     *
-     * Endpoint:
-     * PUT http://localhost:7071/api/usuariosJava
-     *
-     * Body:
-     * {
-     * "id": 2,
-     * "nombre": "Maria Lopez Actualizada",
-     * "email": "maria.actualizada@test.cl",
-     * "password": "123456",
-     * "rolId": 1
-     * }
-     */
+                        String[] partes = campo.split(":");
 
-    private HttpResponseMessage actualizarUsuario(
-            HttpRequestMessage<Optional<String>> request,
-            ExecutionContext context) {
+                        if (partes.length < 2) {
+                                continue;
+                        }
 
-        context.getLogger().info(
-                "usuariosJava proceso una solicitud PUT.");
+                        String clave = partes[0].trim();
+                        String valor = partes[1].trim();
 
-        Optional<String> body = request.getBody();
+                        if (clave.equals("id")) {
+                                id = Integer.parseInt(valor);
+                        }
 
-        if (body.isEmpty() || body.get().isBlank()) {
+                        if (clave.equals("nombre")) {
+                                nombre = valor;
+                        }
 
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body("El cuerpo de la solicitud es obligatorio.")
-                    .build();
-        }
+                        if (clave.equals("email")) {
+                                email = valor;
+                        }
 
-        String contenido = body.get()
-                .replace("{", "")
-                .replace("}", "")
-                .replace("\"", "");
+                        if (clave.equals("password")) {
+                                password = valor;
+                        }
 
-        String[] campos = contenido.split(",");
+                        if (clave.equals("rolId")) {
+                                rolId = Integer.parseInt(valor);
+                        }
+                }
 
-        Integer id = null;
-        String nombre = null;
-        String email = null;
-        String password = null;
-        Integer rolId = null;
+                if (id == null || nombre == null || nombre.isBlank()
+                                || email == null || email.isBlank()
+                                || password == null || password.isBlank()
+                                || rolId == null) {
 
-        for (String campo : campos) {
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body(
+                                                        "Los campos id, nombre, email, password y rolId son obligatorios.")
+                                        .build();
+                }
 
-            String[] partes = campo.split(":");
+                String sql = "UPDATE USUARIO SET " +
+                                "NOMBRE = ?, EMAIL = ?, PASSWORD = ?, ROL_ID = ? " +
+                                "WHERE ID = ?";
 
-            if (partes.length < 2) {
-                continue;
-            }
+                try (
+                                Connection connection = OracleConnection.getConnection();
 
-            String clave = partes[0].trim();
-            String valor = partes[1].trim();
+                                PreparedStatement statement = connection.prepareStatement(sql)) {
 
-            if (clave.equals("id")) {
-                id = Integer.parseInt(valor);
-            }
+                        statement.setString(1, nombre);
+                        statement.setString(2, email);
+                        statement.setString(3, password);
+                        statement.setInt(4, rolId);
+                        statement.setInt(5, id);
 
-            if (clave.equals("nombre")) {
-                nombre = valor;
-            }
+                        int filasActualizadas = statement.executeUpdate();
 
-            if (clave.equals("email")) {
-                email = valor;
-            }
+                        if (filasActualizadas == 0) {
 
-            if (clave.equals("password")) {
-                password = valor;
-            }
+                                return request.createResponseBuilder(
+                                                HttpStatus.NOT_FOUND)
+                                                .body("El usuario no existe.")
+                                                .build();
+                        }
 
-            if (clave.equals("rolId")) {
-                rolId = Integer.parseInt(valor);
-            }
-        }
+                        context.getLogger().info(
+                                        "Usuario actualizado correctamente: " + id);
 
-        if (id == null || nombre == null || nombre.isBlank()
-                || email == null || email.isBlank()
-                || password == null || password.isBlank()
-                || rolId == null) {
+                        return request.createResponseBuilder(
+                                        HttpStatus.OK)
+                                        .body("Usuario actualizado correctamente.")
+                                        .build();
 
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body(
-                            "Los campos id, nombre, email, password y rolId son obligatorios.")
-                    .build();
-        }
+                } catch (Exception e) {
 
-        String sql = "UPDATE USUARIO SET " +
-                "NOMBRE = ?, EMAIL = ?, PASSWORD = ?, ROL_ID = ? " +
-                "WHERE ID = ?";
+                        context.getLogger().severe(
+                                        "Error al actualizar usuario: "
+                                                        + e.getMessage());
 
-        try (
-                Connection connection = OracleConnection.getConnection();
-
-                PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setString(1, nombre);
-            statement.setString(2, email);
-            statement.setString(3, password);
-            statement.setInt(4, rolId);
-            statement.setInt(5, id);
-
-            int filasActualizadas = statement.executeUpdate();
-
-            if (filasActualizadas == 0) {
-
-                return request.createResponseBuilder(
-                        HttpStatus.NOT_FOUND)
-                        .body("El usuario no existe.")
-                        .build();
-            }
-
-            context.getLogger().info(
-                    "Usuario actualizado correctamente: " + id);
-
-            return request.createResponseBuilder(
-                    HttpStatus.OK)
-                    .body("Usuario actualizado correctamente.")
-                    .build();
-
-        } catch (Exception e) {
-
-            context.getLogger().severe(
-                    "Error al actualizar usuario: "
-                            + e.getMessage());
-
-            return request.createResponseBuilder(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error al actualizar el usuario.")
-                    .build();
-        }
-    }
-
-    /*
-     * ============================================================
-     * MÉTODO HTTP: DELETE
-     * OPERACIÓN: ELIMINAR USUARIO
-     * ============================================================
-     *
-     * Endpoint:
-     * DELETE http://localhost:7071/api/usuariosJava?id=2
-     */
-
-    private HttpResponseMessage eliminarUsuario(
-            HttpRequestMessage<Optional<String>> request,
-            ExecutionContext context) {
-
-        context.getLogger().info(
-                "usuariosJava proceso una solicitud DELETE.");
-
-        String idParametro = request.getQueryParameters().get("id");
-
-        if (idParametro == null || idParametro.isBlank()) {
-
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body("El parámetro id es obligatorio.")
-                    .build();
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body("Error al actualizar el usuario.")
+                                        .build();
+                }
         }
 
-        int id;
+        /*
+         * ============================================================
+         * MÉTODO HTTP: DELETE
+         * OPERACIÓN: ELIMINAR USUARIO
+         * ============================================================
+         *
+         * Endpoint:
+         * DELETE http://localhost:7071/api/usuariosJava?id=2
+         */
 
-        try {
+        private HttpResponseMessage eliminarUsuario(
+                        HttpRequestMessage<Optional<String>> request,
+                        ExecutionContext context) {
 
-            id = Integer.parseInt(idParametro);
+                context.getLogger().info(
+                                "usuariosJava proceso una solicitud DELETE.");
 
-        } catch (NumberFormatException e) {
+                String idParametro = request.getQueryParameters().get("id");
 
-            return request.createResponseBuilder(
-                    HttpStatus.BAD_REQUEST)
-                    .body("El parámetro id debe ser numérico.")
-                    .build();
+                if (idParametro == null || idParametro.isBlank()) {
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("El parámetro id es obligatorio.")
+                                        .build();
+                }
+
+                int id;
+
+                try {
+
+                        id = Integer.parseInt(idParametro);
+
+                } catch (NumberFormatException e) {
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.BAD_REQUEST)
+                                        .body("El parámetro id debe ser numérico.")
+                                        .build();
+                }
+
+                String sql = "DELETE FROM USUARIO WHERE ID = ?";
+
+                try (
+                                Connection connection = OracleConnection.getConnection();
+
+                                PreparedStatement statement = connection.prepareStatement(sql)) {
+
+                        statement.setInt(1, id);
+
+                        int filasEliminadas = statement.executeUpdate();
+
+                        if (filasEliminadas == 0) {
+
+                                return request.createResponseBuilder(
+                                                HttpStatus.NOT_FOUND)
+                                                .body("El usuario no existe.")
+                                                .build();
+                        }
+
+                        context.getLogger().info(
+                                        "Usuario eliminado correctamente: " + id);
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.OK)
+                                        .body("Usuario eliminado correctamente.")
+                                        .build();
+
+                } catch (Exception e) {
+
+                        context.getLogger().severe(
+                                        "Error al eliminar usuario: "
+                                                        + e.getMessage());
+
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body("Error al eliminar el usuario.")
+                                        .build();
+                }
         }
 
-        String sql = "DELETE FROM USUARIO WHERE ID = ?";
+        private void publicarEventoUsuario(
+                        String email,
+                        Integer rolId,
+                        ExecutionContext context) {
 
-        try (
-                Connection connection = OracleConnection.getConnection();
+                try {
 
-                PreparedStatement statement = connection.prepareStatement(sql)) {
+                        String endpoint = System.getenv("GENERAR_EVENTO_USUARIO_URL");
 
-            statement.setInt(1, id);
+                        if (endpoint == null || endpoint.isBlank()) {
 
-            int filasEliminadas = statement.executeUpdate();
+                                context.getLogger().warning(
+                                                "GENERAR_EVENTO_USUARIO_URL no está configurada.");
 
-            if (filasEliminadas == 0) {
+                                return;
+                        }
 
-                return request.createResponseBuilder(
-                        HttpStatus.NOT_FOUND)
-                        .body("El usuario no existe.")
-                        .build();
-            }
+                        String json = String.format(
+                                        "{\"email\":\"%s\",\"rolId\":%d}",
+                                        email,
+                                        rolId);
 
-            context.getLogger().info(
-                    "Usuario eliminado correctamente: " + id);
+                        HttpRequest request = HttpRequest.newBuilder()
+                                        .uri(URI.create(endpoint))
+                                        .header("Content-Type", "application/json")
+                                        .POST(HttpRequest.BodyPublishers.ofString(json))
+                                        .build();
 
-            return request.createResponseBuilder(
-                    HttpStatus.OK)
-                    .body("Usuario eliminado correctamente.")
-                    .build();
+                        HttpClient client = HttpClient.newHttpClient();
 
-        } catch (Exception e) {
+                        HttpResponse<String> response = client.send(
+                                        request,
+                                        HttpResponse.BodyHandlers.ofString());
 
-            context.getLogger().severe(
-                    "Error al eliminar usuario: "
-                            + e.getMessage());
+                        context.getLogger().info(
+                                        "Respuesta generarEventoUsuarioJava: "
+                                                        + response.statusCode());
 
-            return request.createResponseBuilder(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error al eliminar el usuario.")
-                    .build();
+                        if (response.statusCode() < 200
+                                        || response.statusCode() >= 300) {
+
+                                context.getLogger().warning(
+                                                "No se pudo publicar el evento UsuarioCreado. "
+                                                                + response.body());
+                        }
+
+                } catch (Exception e) {
+
+                        context.getLogger().severe(
+                                        "Error al invocar generarEventoUsuarioJava: "
+                                                        + e.getMessage());
+                }
         }
-    }
 
 }

@@ -1,0 +1,15 @@
+type Mascota {
+  id: ID!
+  nombre: String!
+}
+
+type Query {
+  mascotas: [Mascota!]!
+  mascota(id: ID!): Mascota
+}
+
+type Mutation {
+  crearMascota(nombre: String!): Mascota!
+  actualizarMascota(id: ID!, nombre: String!): Mascota
+  eliminarMascota(id: ID!): Boolean!
+}
