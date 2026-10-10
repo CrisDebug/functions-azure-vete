@@ -17,8 +17,7 @@ public class UsuarioResolver {
 
             List<Map<String, Object>> usuarios = new ArrayList<>();
 
-            String sql =
-                    "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
+            String sql = "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
                     "FROM USUARIO u " +
                     "INNER JOIN ROL r ON u.ROL_ID = r.ID " +
                     "ORDER BY u.ID";
@@ -26,8 +25,7 @@ public class UsuarioResolver {
             try (
                     Connection connection = OracleConnection.getConnection();
                     PreparedStatement statement = connection.prepareStatement(sql);
-                    ResultSet resultSet = statement.executeQuery()
-            ) {
+                    ResultSet resultSet = statement.executeQuery()) {
 
                 while (resultSet.next()) {
                     usuarios.add(Map.of(
@@ -35,8 +33,7 @@ public class UsuarioResolver {
                             "nombre", resultSet.getString("NOMBRE"),
                             "email", resultSet.getString("EMAIL"),
                             "rolId", resultSet.getLong("ROL_ID"),
-                            "rol", resultSet.getString("ROL")
-                    ));
+                            "rol", resultSet.getString("ROL")));
                 }
 
                 return usuarios;
@@ -48,19 +45,16 @@ public class UsuarioResolver {
         return environment -> {
 
             Long id = Long.valueOf(
-                    environment.getArgument("id").toString()
-            );
+                    environment.getArgument("id").toString());
 
-            String sql =
-                    "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
+            String sql = "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
                     "FROM USUARIO u " +
                     "INNER JOIN ROL r ON u.ROL_ID = r.ID " +
                     "WHERE u.ID = ?";
 
             try (
                     Connection connection = OracleConnection.getConnection();
-                    PreparedStatement statement = connection.prepareStatement(sql)
-            ) {
+                    PreparedStatement statement = connection.prepareStatement(sql)) {
 
                 statement.setLong(1, id);
 
@@ -75,8 +69,7 @@ public class UsuarioResolver {
                             "nombre", resultSet.getString("NOMBRE"),
                             "email", resultSet.getString("EMAIL"),
                             "rolId", resultSet.getLong("ROL_ID"),
-                            "rol", resultSet.getString("ROL")
-                    );
+                            "rol", resultSet.getString("ROL"));
                 }
             }
         };
@@ -89,11 +82,9 @@ public class UsuarioResolver {
             String email = environment.getArgument("email");
             String password = environment.getArgument("password");
             Integer rolId = Integer.valueOf(
-                    environment.getArgument("rolId").toString()
-            );
+                    environment.getArgument("rolId").toString());
 
-            String sql =
-                    "INSERT INTO USUARIO " +
+            String sql = "INSERT INTO USUARIO " +
                     "(NOMBRE, EMAIL, PASSWORD, ROL_ID) " +
                     "VALUES (?, ?, ?, ?)";
 
@@ -101,9 +92,7 @@ public class UsuarioResolver {
                     Connection connection = OracleConnection.getConnection();
                     PreparedStatement statement = connection.prepareStatement(
                             sql,
-                            new String[]{"ID"}
-                    )
-            ) {
+                            new String[] { "ID" })) {
 
                 statement.setString(1, nombre);
                 statement.setString(2, email);
@@ -111,7 +100,7 @@ public class UsuarioResolver {
                 statement.setInt(4, rolId);
 
                 statement.executeUpdate();
-
+                System.out.println("Usuario insertado correctamente: " + email);
                 Long id = null;
 
                 try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
@@ -125,6 +114,10 @@ public class UsuarioResolver {
                 }
 
                 return buscarPorId(connection, id);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                throw e;
             }
         };
     }
@@ -133,25 +126,21 @@ public class UsuarioResolver {
         return environment -> {
 
             Long id = Long.valueOf(
-                    environment.getArgument("id").toString()
-            );
+                    environment.getArgument("id").toString());
 
             String nombre = environment.getArgument("nombre");
             String email = environment.getArgument("email");
             String password = environment.getArgument("password");
             Integer rolId = Integer.valueOf(
-                    environment.getArgument("rolId").toString()
-            );
+                    environment.getArgument("rolId").toString());
 
-            String sql =
-                    "UPDATE USUARIO SET " +
+            String sql = "UPDATE USUARIO SET " +
                     "NOMBRE = ?, EMAIL = ?, PASSWORD = ?, ROL_ID = ? " +
                     "WHERE ID = ?";
 
             try (
                     Connection connection = OracleConnection.getConnection();
-                    PreparedStatement statement = connection.prepareStatement(sql)
-            ) {
+                    PreparedStatement statement = connection.prepareStatement(sql)) {
 
                 statement.setString(1, nombre);
                 statement.setString(2, email);
@@ -174,15 +163,13 @@ public class UsuarioResolver {
         return environment -> {
 
             Long id = Long.valueOf(
-                    environment.getArgument("id").toString()
-            );
+                    environment.getArgument("id").toString());
 
             String sql = "DELETE FROM USUARIO WHERE ID = ?";
 
             try (
                     Connection connection = OracleConnection.getConnection();
-                    PreparedStatement statement = connection.prepareStatement(sql)
-            ) {
+                    PreparedStatement statement = connection.prepareStatement(sql)) {
 
                 statement.setLong(1, id);
 
@@ -195,8 +182,7 @@ public class UsuarioResolver {
             Connection connection,
             Long id) throws Exception {
 
-        String sql =
-                "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
+        String sql = "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
                 "FROM USUARIO u " +
                 "INNER JOIN ROL r ON u.ROL_ID = r.ID " +
                 "WHERE u.ID = ?";
@@ -216,8 +202,7 @@ public class UsuarioResolver {
                         "nombre", resultSet.getString("NOMBRE"),
                         "email", resultSet.getString("EMAIL"),
                         "rolId", resultSet.getLong("ROL_ID"),
-                        "rol", resultSet.getString("ROL")
-                );
+                        "rol", resultSet.getString("ROL"));
             }
         }
     }
@@ -226,8 +211,7 @@ public class UsuarioResolver {
             Connection connection,
             String email) throws Exception {
 
-        String sql =
-                "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
+        String sql = "SELECT u.ID, u.NOMBRE, u.EMAIL, u.ROL_ID, r.NOMBRE AS ROL " +
                 "FROM USUARIO u " +
                 "INNER JOIN ROL r ON u.ROL_ID = r.ID " +
                 "WHERE u.EMAIL = ?";
@@ -247,8 +231,7 @@ public class UsuarioResolver {
                         "nombre", resultSet.getString("NOMBRE"),
                         "email", resultSet.getString("EMAIL"),
                         "rolId", resultSet.getLong("ROL_ID"),
-                        "rol", resultSet.getString("ROL")
-                );
+                        "rol", resultSet.getString("ROL"));
             }
         }
     }

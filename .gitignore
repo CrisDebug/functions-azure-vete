@@ -34,3 +34,10 @@ Wallet/
 *.jks
 *.sso
 *.ora
+
+# Backups locales y archivos temporales
+*.bak
+*.backup
+*.backup-eventos
+*.before-deleteRol
+*.pre-reasignacion.bak

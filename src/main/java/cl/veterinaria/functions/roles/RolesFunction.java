@@ -14,6 +14,7 @@ import com.microsoft.azure.functions.annotation.HttpTrigger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Optional;
 
 import java.net.URI;
@@ -399,71 +400,100 @@ public class RolesFunction {
                         HttpRequestMessage<Optional<String>> request,
                         ExecutionContext context) {
 
-                context.getLogger().info(
-                                "rolesJava proceso una solicitud DELETE.");
-
-                // Obtener ID desde el Query Parameter
                 String idParametro = request.getQueryParameters().get("id");
 
-                // Validar que exista el ID
                 if (idParametro == null || idParametro.isBlank()) {
-
-                        return request.createResponseBuilder(
-                                        HttpStatus.BAD_REQUEST)
+                        return request.createResponseBuilder(HttpStatus.BAD_REQUEST)
                                         .body("El parámetro id es obligatorio.")
                                         .build();
                 }
 
                 int id;
-
                 try {
-
                         id = Integer.parseInt(idParametro);
-
+                        if (id <= 0) {
+                                throw new NumberFormatException();
+                        }
                 } catch (NumberFormatException e) {
-
-                        return request.createResponseBuilder(
-                                        HttpStatus.BAD_REQUEST)
-                                        .body("El parámetro id debe ser numérico.")
+                        return request.createResponseBuilder(HttpStatus.BAD_REQUEST)
+                                        .body("El parámetro id debe ser un entero positivo.")
                                         .build();
                 }
 
-                String sql = "DELETE FROM ROL WHERE ID = ?";
+                String endpoint = System.getenv("EVENT_GRID_ENDPOINT");
+                String key = System.getenv("EVENT_GRID_KEY");
 
-                try (
-                                Connection connection = OracleConnection.getConnection();
+                if (endpoint == null || endpoint.isBlank()
+                                || key == null || key.isBlank()) {
+                        context.getLogger().severe(
+                                        "No están configuradas las variables de Event Grid.");
 
-                                PreparedStatement statement = connection.prepareStatement(sql)) {
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body("Configuración de Event Grid no disponible.")
+                                        .build();
+                }
 
-                        statement.setInt(1, id);
+                String eventId = java.util.UUID.randomUUID().toString();
+                String eventTime = java.time.Instant.now().toString();
 
-                        int filasEliminadas = statement.executeUpdate();
+                String evento = """
+                                [
+                                  {
+                                    "id": "%s",
+                                    "eventType": "RolEliminacionSolicitada",
+                                    "subject": "/roles/%d",
+                                    "eventTime": "%s",
+                                    "data": {
+                                      "rolId": %d
+                                    },
+                                    "dataVersion": "1.0"
+                                  }
+                                ]
+                                """.formatted(eventId, id, eventTime, id);
 
-                        if (filasEliminadas == 0) {
+                try {
+                        HttpRequest httpRequest = HttpRequest.newBuilder()
+                                        .uri(URI.create(endpoint))
+                                        .header("Content-Type", "application/json")
+                                        .header("aeg-sas-key", key)
+                                        .POST(HttpRequest.BodyPublishers.ofString(evento))
+                                        .build();
 
-                                return request.createResponseBuilder(
-                                                HttpStatus.NOT_FOUND)
-                                                .body("El rol no existe.")
+                        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                                        httpRequest,
+                                        HttpResponse.BodyHandlers.ofString());
+
+                        context.getLogger().info(
+                                        "Publicación de RolEliminacionSolicitada: "
+                                                        + response.statusCode());
+
+                        if (response.statusCode() >= 200
+                                        && response.statusCode() < 300) {
+                                return request.createResponseBuilder(HttpStatus.ACCEPTED)
+                                                .body("Solicitud de eliminación recibida por Event Grid. "
+                                                                + "eventId: " + eventId
+                                                                + ". La eliminación se procesará de forma asíncrona.")
                                                 .build();
                         }
 
-                        context.getLogger().info(
-                                        "Rol eliminado correctamente: " + id);
+                        context.getLogger().severe(
+                                        "Event Grid rechazó el evento: "
+                                                        + response.statusCode() + " - " + response.body());
 
                         return request.createResponseBuilder(
-                                        HttpStatus.OK)
-                                        .body("Rol eliminado correctamente.")
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body("No se pudo publicar la solicitud en Event Grid.")
                                         .build();
 
                 } catch (Exception e) {
-
                         context.getLogger().severe(
-                                        "Error al eliminar rol: "
+                                        "Error publicando solicitud de eliminación: "
                                                         + e.getMessage());
 
                         return request.createResponseBuilder(
                                         HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body("Error al eliminar el rol.")
+                                        .body("Error al enviar la solicitud de eliminación.")
                                         .build();
                 }
         }

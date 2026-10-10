@@ -679,3 +679,84 @@ La arquitectura mantiene el BFF como punto de entrada y las Azure Functions como
                   │   Cosmos DB    │
                   │  trazabilidad  │
                   └────────────────┘
+
+---
+
+# 16. Flujos de eventos para usuarios y roles
+
+La solución incorpora flujos asíncronos mediante Azure Event Grid. Estos flujos complementan las operaciones CRUD implementadas en Azure Functions y utilizan Oracle como base de datos operacional.
+
+## 16.1 Asignación del rol predeterminado
+
+La función `generarEventoAsignacionRolJava` recibe una solicitud HTTP POST con el identificador del usuario y publica el evento `AsignacionRolPredeterminadoSolicitada`.
+
+La función consumidora `asignarRolPredeterminadoPorEventoJava` procesa el evento, busca el rol `ROL_PRIMARIO` en Oracle, verifica que el usuario exista y actualiza su `ROL_ID` dentro de una transacción.
+
+Flujo:
+
+```text
+Solicitud HTTP
+    |
+    v
+generarEventoAsignacionRolJava
+    |
+    v
+Azure Event Grid
+    |
+    v
+asignarRolPredeterminadoPorEventoJava
+    |
+    v
+Oracle: actualizar ROL_ID
+```
+
+Ejemplo de cuerpo HTTP:
+
+```json
+{
+  "usuarioId": 123
+}
+```
+
+La publicación requiere las variables de entorno `EVENT_GRID_ENDPOINT` y `EVENT_GRID_KEY`. No se deben almacenar sus valores reales en el repositorio.
+
+## 16.2 Eliminación de roles mediante eventos
+
+La función `eliminarRolPorEventoJava` consume eventos de tipo `RolEliminacionSolicitada`.
+
+El procesamiento valida el identificador del rol y protege el rol `ROL_PRIMARIO` y el rol administrador identificado por el código. Para un rol válido, la operación reasigna primero los usuarios afectados a `ROL_PRIMARIO`, elimina el rol y confirma los cambios en una transacción Oracle.
+
+```text
+Solicitud de eliminación
+    |
+    v
+Publicación del evento
+    |
+    v
+Azure Event Grid
+    |
+    v
+eliminarRolPorEventoJava
+    |
+    v
+Oracle: reasignar usuarios y eliminar rol
+```
+
+Si el procesamiento falla, la función revierte la transacción y propaga el error para que Azure pueda registrar el fallo y aplicar las políticas configuradas de reintento o entrega fallida.
+
+## 16.3 Trazabilidad de eventos
+
+La arquitectura también contempla funciones de consumo de eventos de usuarios y roles, identificadas como `eventoUsuarioJava` y `eventoRolJava`, para registrar trazabilidad en el contenedor `trazabilidad` de Azure Cosmos DB.
+
+Este flujo es complementario al de reasignación y eliminación de roles: Cosmos DB se utiliza para trazabilidad, mientras Oracle mantiene los datos operacionales de usuarios y roles.
+
+## 16.4 Consideraciones operacionales
+
+- Configurar las variables sensibles en Azure Function App Settings.
+- Verificar las suscripciones y los filtros de Event Grid para cada tipo de evento.
+- Revisar los logs de las funciones productoras y consumidoras.
+- Validar el resultado en Oracle después de una operación asíncrona.
+- No asumir que la respuesta de publicación implica que el consumidor ya terminó de procesar el evento.
+- Mantener fuera de Git el Oracle Wallet, los archivos de configuración local y las claves.
+
+---

@@ -1,5 +1,8 @@
+
 package cl.veterinaria.functions.usuarios;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.azure.functions.ExecutionContext;
 import com.microsoft.azure.functions.HttpMethod;
 import com.microsoft.azure.functions.HttpRequestMessage;
@@ -11,6 +14,7 @@ import com.microsoft.azure.functions.annotation.HttpTrigger;
 
 import graphql.ExecutionResult;
 import graphql.GraphQL;
+import graphql.GraphQLError;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.SchemaGenerator;
@@ -19,209 +23,185 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Scanner;
 
 public class UsuariosGraphQLFunction {
 
-    private static final GraphQL GRAPHQL = crearGraphQL();
+        // Permite interpretar correctamente el cuerpo JSON de la petición.
+        private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    @FunctionName("usuariosGraphQL")
-    public HttpResponseMessage run(
-            @HttpTrigger(
-                    name = "req",
-                    methods = {HttpMethod.POST},
-                    authLevel = AuthorizationLevel.ANONYMOUS,
-                    route = "usuariosGraphQL"
-            )
-            HttpRequestMessage<Optional<String>> request,
-            final ExecutionContext context) {
+        // Instancia de GraphQL configurada con el esquema y los resolvers.
+        private static final GraphQL GRAPHQL = crearGraphQL();
 
-        try {
+        @FunctionName("usuariosGraphQL")
+        public HttpResponseMessage run(
+                        @HttpTrigger(name = "req", methods = {
+                                        HttpMethod.POST }, authLevel = AuthorizationLevel.ANONYMOUS, route = "usuariosGraphQL") HttpRequestMessage<Optional<String>> request,
+                        final ExecutionContext context) {
 
-            String body = request.getBody().orElse("");
-            String query = extraerQuery(body);
+                try {
+                        // Obtiene el cuerpo JSON enviado en la petición HTTP.
+                        String body = request.getBody().orElse("");
 
-            if (query == null || query.isBlank()) {
+                        // Extrae la consulta GraphQL usando Jackson.
+                        String query = extraerQuery(body);
 
-                return request.createResponseBuilder(
-                                HttpStatus.BAD_REQUEST)
-                        .body("{\"error\":\"Debe enviar una query GraphQL\"}")
-                        .header("Content-Type", "application/json")
-                        .build();
-            }
+                        if (query == null || query.isBlank()) {
+                                return request.createResponseBuilder(HttpStatus.BAD_REQUEST)
+                                                .body(Map.of(
+                                                                "error",
+                                                                "Debe enviar una query GraphQL en el campo query"))
+                                                .header("Content-Type", "application/json")
+                                                .build();
+                        }
 
-            ExecutionResult resultado = GRAPHQL.execute(query);
+                        // Ejecuta la consulta o mutación GraphQL.
+                        ExecutionResult resultado = GRAPHQL.execute(query);
 
-            Map<String, Object> respuesta =
-                    resultado.toSpecification();
+                        // Registra los errores de ejecución para facilitar el diagnóstico.
+                        List<GraphQLError> errores = resultado.getErrors();
 
-            return request.createResponseBuilder(
-                            HttpStatus.OK)
-                    .body(respuesta)
-                    .header("Content-Type", "application/json")
-                    .build();
+                        if (errores != null && !errores.isEmpty()) {
+                                for (GraphQLError error : errores) {
+                                        context.getLogger().severe(
+                                                        "Error GraphQL: " + error);
+                                }
+                        }
 
-        } catch (Exception e) {
+                        // Convierte el resultado al formato estándar de respuesta GraphQL.
+                        Map<String, Object> respuesta = resultado.toSpecification();
 
-            context.getLogger().severe(
-                    "Error ejecutando GraphQL: " + e.getMessage());
+                        return request.createResponseBuilder(HttpStatus.OK)
+                                        .body(respuesta)
+                                        .header("Content-Type", "application/json")
+                                        .build();
 
-            return request.createResponseBuilder(
-                            HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("{\"error\":\"Error ejecutando GraphQL\"}")
-                    .header("Content-Type", "application/json")
-                    .build();
-        }
-    }
+                } catch (Exception e) {
+                        // Registra la excepción completa para identificar el origen del error.
+                        context.getLogger().severe(
+                                        "Error ejecutando GraphQL: " + e);
 
-    private static GraphQL crearGraphQL() {
-
-        String schemaSDL = cargarSchema();
-
-        TypeDefinitionRegistry registry =
-                new SchemaParser().parse(schemaSDL);
-
-        UsuarioResolver resolver =
-                new UsuarioResolver();
-
-        RuntimeWiring wiring =
-                RuntimeWiring.newRuntimeWiring()
-
-                        .type(
-                                "Query",
-                                builder -> builder
-                                        .dataFetcher(
-                                                "usuarios",
-                                                resolver.listarUsuarios())
-                                        .dataFetcher(
-                                                "usuario",
-                                                resolver.buscarUsuario())
-                        )
-
-                        .type(
-                                "Mutation",
-                                builder -> builder
-                                        .dataFetcher(
-                                                "crearUsuario",
-                                                resolver.crearUsuario())
-                                        .dataFetcher(
-                                                "actualizarUsuario",
-                                                resolver.actualizarUsuario())
-                                        .dataFetcher(
-                                                "eliminarUsuario",
-                                                resolver.eliminarUsuario())
-                        )
-
-                        .build();
-
-        GraphQLSchema schema =
-                new SchemaGenerator()
-                        .makeExecutableSchema(
-                                registry,
-                                wiring
-                        );
-
-        return GraphQL
-                .newGraphQL(schema)
-                .build();
-    }
-
-    private static String cargarSchema() {
-
-        InputStream inputStream =
-                UsuariosGraphQLFunction.class
-                        .getClassLoader()
-                        .getResourceAsStream(
-                                "graphql/usuarios.graphqls");
-
-        if (inputStream == null) {
-
-            throw new IllegalStateException(
-                    "No se encontro graphql/usuarios.graphqls");
+                        return request.createResponseBuilder(
+                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(Map.of(
+                                                        "error",
+                                                        "Error ejecutando GraphQL",
+                                                        "detalle",
+                                                        e.getMessage() == null
+                                                                        ? "Error no especificado"
+                                                                        : e.getMessage()))
+                                        .header("Content-Type", "application/json")
+                                        .build();
+                }
         }
 
-        try (
-                Scanner scanner =
-                        new Scanner(
-                                inputStream,
-                                StandardCharsets.UTF_8)
-        ) {
+        private static GraphQL crearGraphQL() {
 
-            scanner.useDelimiter("\\A");
+                // Carga la definición del esquema GraphQL.
+                String schemaSDL = cargarSchema();
 
-            return scanner.hasNext()
-                    ? scanner.next()
-                    : "";
+                TypeDefinitionRegistry registry = new SchemaParser().parse(schemaSDL);
+
+                // Crea el resolver que accede a los datos de usuarios.
+                UsuarioResolver resolver = new UsuarioResolver();
+
+                // Asocia cada operación del esquema con su método correspondiente.
+                RuntimeWiring wiring = RuntimeWiring.newRuntimeWiring()
+
+                                .type(
+                                                "Query",
+                                                builder -> builder
+                                                                .dataFetcher(
+                                                                                "usuarios",
+                                                                                resolver.listarUsuarios())
+                                                                .dataFetcher(
+                                                                                "usuario",
+                                                                                resolver.buscarUsuario()))
+
+                                .type(
+                                                "Mutation",
+                                                builder -> builder
+                                                                .dataFetcher(
+                                                                                "crearUsuario",
+                                                                                resolver.crearUsuario())
+                                                                .dataFetcher(
+                                                                                "actualizarUsuario",
+                                                                                resolver.actualizarUsuario())
+                                                                .dataFetcher(
+                                                                                "eliminarUsuario",
+                                                                                resolver.eliminarUsuario()))
+
+                                .build();
+
+                // Construye el esquema ejecutable a partir del SDL y los resolvers.
+                GraphQLSchema schema = new SchemaGenerator()
+                                .makeExecutableSchema(registry, wiring);
+
+                return GraphQL.newGraphQL(schema).build();
         }
-    }
 
-    private static String extraerQuery(String body) {
+        private static String cargarSchema() {
 
-        String marker = "\"query\"";
+                // Busca el esquema dentro de los recursos del proyecto.
+                InputStream inputStream = UsuariosGraphQLFunction.class
+                                .getClassLoader()
+                                .getResourceAsStream(
+                                                "graphql/usuarios.graphqls");
 
-        int inicio = body.indexOf(marker);
-
-        if (inicio < 0) {
-            return null;
-        }
-
-        int dosPuntos =
-                body.indexOf(":", inicio);
-
-        if (dosPuntos < 0) {
-            return null;
-        }
-
-        int primeraComilla =
-                body.indexOf("\"", dosPuntos + 1);
-
-        if (primeraComilla < 0) {
-            return null;
-        }
-
-        StringBuilder query =
-                new StringBuilder();
-
-        boolean escapado = false;
-
-        for (
-                int i = primeraComilla + 1;
-                i < body.length();
-                i++
-        ) {
-
-            char c = body.charAt(i);
-
-            if (escapado) {
-
-                if (c == '"') {
-                    query.append('"');
-
-                } else if (c == '\\') {
-                    query.append('\\');
-
-                } else {
-                    query.append(c);
+                if (inputStream == null) {
+                        throw new IllegalStateException(
+                                        "No se encontró graphql/usuarios.graphqls");
                 }
 
-                escapado = false;
-                continue;
-            }
+                // Lee el contenido completo del archivo del esquema.
+                try (
+                                Scanner scanner = new Scanner(
+                                                inputStream,
+                                                StandardCharsets.UTF_8)) {
+                        scanner.useDelimiter("\\A");
 
-            if (c == '\\') {
-                escapado = true;
-                continue;
-            }
-
-            if (c == '"') {
-                break;
-            }
-
-            query.append(c);
+                        return scanner.hasNext()
+                                        ? scanner.next()
+                                        : "";
+                }
         }
 
-        return query.toString();
-    }
+        private static String extraerQuery(String body) {
+
+                // Comprueba que la petición tenga contenido.
+                if (body == null || body.isBlank()) {
+                        return null;
+                }
+
+                try {
+                        // Jackson interpreta correctamente comillas, barras y saltos de línea
+                        // escapados dentro de la propiedad JSON "query".
+                        JsonNode json = OBJECT_MAPPER.readTree(body);
+
+                        if (json == null || !json.isObject()) {
+                                throw new IllegalArgumentException(
+                                                "El cuerpo debe ser un objeto JSON");
+                        }
+
+                        JsonNode queryNode = json.get("query");
+
+                        if (queryNode == null
+                                        || queryNode.isNull()
+                                        || !queryNode.isTextual()) {
+                                return null;
+                        }
+
+                        // Devuelve el texto GraphQL ya decodificado desde el JSON.
+                        return queryNode.asText();
+
+                } catch (Exception e) {
+                        throw new IllegalArgumentException(
+                                        "No se pudo interpretar el JSON de la petición: "
+                                                        + e.getMessage(),
+                                        e);
+                }
+        }
 }

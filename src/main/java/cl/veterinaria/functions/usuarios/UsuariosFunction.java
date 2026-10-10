@@ -176,11 +176,18 @@ public class UsuariosFunction {
          * {
          * "nombre": "Maria Lopez",
          * "email": "maria.lopez@test.cl",
-         * "password": "123456",
-         * "rolId": 1
+         * "password": "123456"
          * }
+         *
+         * Flujo:
+         * 1. Validar los datos recibidos.
+         * 2. Obtener el rol ROL_PRIMARIO.
+         * 3. Insertar el usuario en Oracle.
+         * 4. Recuperar el ID real del usuario creado.
+         * 5. Publicar el evento UsuarioCreado existente.
+         * 6. Solicitar la asignación del rol mediante el nuevo evento.
+         * ============================================================
          */
-
         private HttpResponseMessage crearUsuario(
                         HttpRequestMessage<Optional<String>> request,
                         ExecutionContext context) {
@@ -188,109 +195,128 @@ public class UsuariosFunction {
                 context.getLogger().info(
                                 "usuariosJava proceso una solicitud POST.");
 
+                // 1. Validar que exista el cuerpo de la solicitud.
                 Optional<String> body = request.getBody();
 
                 if (body.isEmpty() || body.get().isBlank()) {
-
-                        return request.createResponseBuilder(
-                                        HttpStatus.BAD_REQUEST)
+                        return request.createResponseBuilder(HttpStatus.BAD_REQUEST)
                                         .body("El cuerpo de la solicitud es obligatorio.")
                                         .build();
                 }
 
-                String contenido = body.get()
-                                .replace("{", "")
-                                .replace("}", "")
-                                .replace("\"", "");
+                // 2. Leer y validar los campos del JSON.
+                String nombre;
+                String email;
+                String password;
 
-                String[] campos = contenido.split(",");
+                try {
+                        com.fasterxml.jackson.databind.JsonNode json = new com.fasterxml.jackson.databind.ObjectMapper()
+                                        .readTree(body.get());
 
-                String nombre = null;
-                String email = null;
-                String password = null;
-                Integer rolId = null;
-
-                for (String campo : campos) {
-
-                        String[] partes = campo.split(":");
-
-                        if (partes.length < 2) {
-                                continue;
-                        }
-
-                        String clave = partes[0].trim();
-                        String valor = partes[1].trim();
-
-                        if (clave.equals("nombre")) {
-                                nombre = valor;
-                        }
-
-                        if (clave.equals("email")) {
-                                email = valor;
-                        }
-
-                        if (clave.equals("password")) {
-                                password = valor;
-                        }
-
-                        if (clave.equals("rolId")) {
-                                rolId = Integer.parseInt(valor);
-                        }
-                }
-
-                if (nombre == null || nombre.isBlank()
-                                || email == null || email.isBlank()
-                                || password == null || password.isBlank()
-                                || rolId == null) {
-
-                        return request.createResponseBuilder(
-                                        HttpStatus.BAD_REQUEST)
-                                        .body(
-                                                        "Los campos nombre, email, password y rolId son obligatorios.")
-                                        .build();
-                }
-
-                String sql = "INSERT INTO USUARIO " +
-                                "(NOMBRE, EMAIL, PASSWORD, ROL_ID) " +
-                                "VALUES (?, ?, ?, ?)";
-
-                try (
-                                Connection connection = OracleConnection.getConnection();
-
-                                PreparedStatement statement = connection.prepareStatement(sql)) {
-
-                        statement.setString(1, nombre);
-                        statement.setString(2, email);
-                        statement.setString(3, password);
-                        statement.setInt(4, rolId);
-
-                        statement.executeUpdate();
-
-                        context.getLogger().info(
-                                        "Usuario creado correctamente: " + email);
-
-                        // Publicar evento UsuarioCreado
-                        publicarEventoUsuario(email, rolId, context);
-
-                        context.getLogger().info(
-                                        "Evento UsuarioCreado solicitado para: " + email);
-
-                        return request.createResponseBuilder(
-                                        HttpStatus.CREATED)
-                                        .body("Usuario creado correctamente.")
-                                        .build();
+                        nombre = json.path("nombre").asText("");
+                        email = json.path("email").asText("");
+                        password = json.path("password").asText("");
 
                 } catch (Exception e) {
+                        return request.createResponseBuilder(HttpStatus.BAD_REQUEST)
+                                        .body("El JSON enviado no es válido.")
+                                        .build();
+                }
 
+                if (nombre.isBlank() || email.isBlank() || password.isBlank()) {
+                        return request.createResponseBuilder(HttpStatus.BAD_REQUEST)
+                                        .body("Los campos nombre, email y password son obligatorios.")
+                                        .build();
+                }
+
+                int rolId;
+                long usuarioId;
+
+                // 3. Crear el usuario en Oracle y recuperar su ID.
+                try (Connection connection = OracleConnection.getConnection()) {
+
+                        // Buscar el identificador del rol predeterminado.
+                        String sqlRol = "SELECT ID FROM ROL WHERE UPPER(NOMBRE) = 'ROL_PRIMARIO'";
+
+                        try (PreparedStatement statement = connection.prepareStatement(sqlRol);
+                                        ResultSet resultado = statement.executeQuery()) {
+
+                                if (!resultado.next()) {
+                                        context.getLogger().severe(
+                                                        "No existe el rol ROL_PRIMARIO en Oracle.");
+
+                                        return request.createResponseBuilder(
+                                                        HttpStatus.INTERNAL_SERVER_ERROR)
+                                                        .body("No existe el rol ROL_PRIMARIO en Oracle.")
+                                                        .build();
+                                }
+
+                                rolId = resultado.getInt("ID");
+                        }
+
+                        // Insertar el usuario con un rol válido.
+                        String sqlUsuario = "INSERT INTO USUARIO (NOMBRE, EMAIL, PASSWORD, ROL_ID) "
+                                        + "VALUES (?, ?, ?, ?)";
+
+                        try (PreparedStatement statement = connection.prepareStatement(sqlUsuario)) {
+
+                                statement.setString(1, nombre);
+                                statement.setString(2, email);
+                                statement.setString(3, password);
+                                statement.setInt(4, rolId);
+
+                                statement.executeUpdate();
+                        }
+
+                        // Recuperar el ID del usuario recién insertado.
+                        String sqlId = "SELECT ID FROM USUARIO WHERE EMAIL = ?";
+
+                        try (PreparedStatement statement = connection.prepareStatement(sqlId)) {
+
+                                statement.setString(1, email);
+
+                                try (ResultSet resultado = statement.executeQuery()) {
+                                        if (!resultado.next()) {
+                                                throw new IllegalStateException(
+                                                                "No se pudo recuperar el ID del usuario creado.");
+                                        }
+
+                                        usuarioId = resultado.getLong("ID");
+                                }
+                        }
+
+                        context.getLogger().info(
+                                        "Usuario creado: id=" + usuarioId
+                                                        + ", email=" + email
+                                                        + ", rolId=" + rolId);
+
+                } catch (Exception e) {
                         context.getLogger().severe(
-                                        "Error al crear usuario: "
-                                                        + e.getMessage());
+                                        "Error al crear usuario: " + e.getMessage());
 
                         return request.createResponseBuilder(
                                         HttpStatus.INTERNAL_SERVER_ERROR)
                                         .body("Error al crear el usuario.")
                                         .build();
                 }
+
+                // 4. Mantener la publicación del evento existente.
+                publicarEventoUsuario(email, rolId, context);
+
+                context.getLogger().info(
+                                "Evento UsuarioCreado solicitado para: " + email);
+
+                // 5. Solicitar la asignación del rol mediante el nuevo productor.
+                publicarEventoAsignacionRol((int) usuarioId, context);
+
+                // 6. Responder que el usuario fue creado.
+                return request.createResponseBuilder(HttpStatus.CREATED)
+                                .header("Content-Type", "application/json")
+                                .body("{\"mensaje\":\"Usuario creado correctamente\","
+                                                + "\"usuarioId\":" + usuarioId + ","
+                                                + "\"rol\":\"ROL_PRIMARIO\","
+                                                + "\"rolId\":" + rolId + "}")
+                                .build();
         }
 
         /*
@@ -567,4 +593,81 @@ public class UsuariosFunction {
                 }
         }
 
+        /**
+         * Publica una solicitud independiente para asignar el rol predeterminado
+         * a un usuario mediante Azure Event Grid.
+         *
+         * Este método invoca al productor HTTP, que publica el evento.
+         * El consumidor independiente procesa posteriormente la solicitud.
+         *
+         * @param usuarioId ID del usuario recién creado en Oracle.
+         * @param context   Contexto de ejecución de Azure Functions.
+         */
+        private void publicarEventoAsignacionRol(
+                        int usuarioId,
+                        ExecutionContext context) {
+
+                try {
+                        // 1. Registrar el inicio para facilitar el seguimiento.
+                        context.getLogger().info(
+                                        "Iniciando publicación de asignación de rol. usuarioId="
+                                                        + usuarioId);
+
+                        // 2. Obtener la URL del productor desde las variables de entorno.
+                        String endpoint = System.getenv(
+                                        "GENERAR_EVENTO_ASIGNACION_ROL_URL");
+
+                        // 3. Validar que la URL esté configurada.
+                        if (endpoint == null || endpoint.isBlank()) {
+                                context.getLogger().severe(
+                                                "GENERAR_EVENTO_ASIGNACION_ROL_URL no está configurada.");
+                                return;
+                        }
+
+                        // 4. Construir el JSON que recibirá el productor.
+                        String json = String.format(
+                                        "{\"usuarioId\":%d}",
+                                        usuarioId);
+
+                        // 5. Crear la petición HTTP POST.
+                        HttpRequest request = HttpRequest.newBuilder()
+                                        .uri(URI.create(endpoint))
+                                        .header("Content-Type", "application/json")
+                                        .POST(HttpRequest.BodyPublishers.ofString(json))
+                                        .build();
+
+                        // 6. Invocar al productor y recibir su respuesta.
+                        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                                        request,
+                                        HttpResponse.BodyHandlers.ofString());
+
+                        // 7. Registrar el código HTTP y el cuerpo de la respuesta.
+                        context.getLogger().info(
+                                        "Respuesta del productor de asignación de rol. usuarioId="
+                                                        + usuarioId
+                                                        + ", HTTP=" + response.statusCode()
+                                                        + ", respuesta=" + response.body());
+
+                        // 8. Registrar explícitamente cualquier respuesta HTTP no exitosa.
+                        if (response.statusCode() < 200
+                                        || response.statusCode() >= 300) {
+
+                                context.getLogger().severe(
+                                                "El productor rechazó la solicitud de asignación. "
+                                                                + "usuarioId=" + usuarioId
+                                                                + ", HTTP=" + response.statusCode());
+                        } else {
+                                context.getLogger().info(
+                                                "El productor aceptó la solicitud de asignación. "
+                                                                + "usuarioId=" + usuarioId);
+                        }
+
+                } catch (Exception e) {
+                        // 9. Registrar errores de conexión o de invocación.
+                        context.getLogger().severe(
+                                        "Error al solicitar la asignación del rol. usuarioId="
+                                                        + usuarioId
+                                                        + ", error=" + e.getMessage());
+                }
+        }
 }
